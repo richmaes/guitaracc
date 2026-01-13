@@ -1,0 +1,42 @@
+# Zephyr build outputs
+build/
+**/build/
+
+# Nordic nRF Connect SDK
+.west/
+bootloader/
+modules/
+tools/
+zephyr/
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.elf
+*.hex
+*.bin
+*.map
+
+# IDE
+.vscode/
+*.code-workspace
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~

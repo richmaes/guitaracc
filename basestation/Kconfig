@@ -1,0 +1,4 @@
+# Copyright (c) 2026 GuitarAcc Project
+# SPDX-License-Identifier: Apache-2.0
+
+source "Kconfig.zephyr"

@@ -32,6 +32,16 @@ Guitar 3 (Peripheral) ──┼──> Basestation (Central) ──> MIDI Serial
 Guitar 4 (Peripheral) ──┘
 ```
 
+## BLE UUIDs
+
+### Guitar Service UUID
+- **UUID**: `a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a3f`
+- **Purpose**: Identifies GuitarAcc guitar devices
+- **Usage**: 
+  - Advertised by all guitar peripherals
+  - Used by basestation to filter and connect only to guitar devices
+  - Prevents accidental connections to non-guitar BLE devices
+
 ## Key Concepts
 
 ### Why Central vs Peripheral?

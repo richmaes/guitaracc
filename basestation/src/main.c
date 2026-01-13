@@ -17,8 +17,29 @@ LOG_MODULE_REGISTER(basestation, LOG_LEVEL_DBG);
 #define MAX_GUITARS 4
 #define MIDI_BAUD_RATE 31250
 
+/* Custom Guitar Service UUID: a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a3f */
+#define BT_UUID_GUITAR_SERVICE_VAL \
+	BT_UUID_128_ENCODE(0xa7c8f9d2, 0x4b3e, 0x4a1d, 0x9f2c, 0x8e7d6c5b4a3f)
+
+static struct bt_uuid_128 guitar_service_uuid = BT_UUID_INIT_128(
+	BT_UUID_GUITAR_SERVICE_VAL);
+
 static struct bt_conn *guitar_conns[MAX_GUITARS];
 static const struct device *midi_uart;
+
+static bool check_guitar_uuid(struct bt_data *data, void *user_data)
+{
+	bool *found = user_data;
+
+	if (data->type == BT_DATA_UUID128_ALL) {
+		if (data->data_len == 16) {
+			if (memcmp(data->data, guitar_service_uuid.val, 16) == 0) {
+				*found = true;
+			}
+		}
+	}
+	return true;
+}
 
 static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 			 struct net_buf_simple *ad)
@@ -26,9 +47,18 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 	char addr_str[BT_ADDR_LE_STR_LEN];
 	int err;
 	int slot = -1;
+	bool is_guitar = false;
 
 	bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
-	LOG_INF("Device found: %s (RSSI %d)", addr_str, rssi);
+
+	/* Check if device advertises Guitar Service UUID */
+	bt_data_parse(ad, check_guitar_uuid, &is_guitar);
+
+	if (!is_guitar) {
+		return; /* Not a guitar device, ignore */
+	}
+
+	LOG_INF("Guitar found: %s (RSSI %d)", addr_str, rssi);
 
 	/* Find empty connection slot */
 	for (int i = 0; i < MAX_GUITARS; i++) {

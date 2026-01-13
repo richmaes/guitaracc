@@ -10,8 +10,21 @@
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/gatt.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/pm/device.h>
+#include <math.h>
 
 LOG_MODULE_REGISTER(guitar, LOG_LEVEL_DBG);
+
+#define ACCEL_ALIAS DT_ALIAS(accel0)
+#define MOTION_TIMEOUT_MS 30000  /* 30 seconds of inactivity before sleep */
+#define MOTION_THRESHOLD 0.5     /* m/s² threshold for motion detection */
+
+static const struct device *accel_dev = DEVICE_DT_GET(ACCEL_ALIAS);
+static struct k_timer motion_timer;
+static bool is_sleeping = false;
+static bool is_connected = false;
 
 /* Custom Guitar Service UUID: a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a3f */
 #define BT_UUID_GUITAR_SERVICE_VAL \
@@ -25,18 +38,48 @@ static const struct bt_data ad[] = {
 	BT_DATA(BT_DATA_UUID128_ALL, guitar_service_uuid.val, sizeof(guitar_service_uuid.val)),
 };
 
+static void motion_timeout_handler(struct k_timer *timer)
+{
+	if (!is_connected) {
+		LOG_INF("No motion detected, entering sleep mode");
+		is_sleeping = true;
+		bt_le_adv_stop();
+		/* Put accelerometer in motion detection mode with lower power */
+		pm_device_action_run(accel_dev, PM_DEVICE_ACTION_SUSPEND);
+	}
+}
+
+static void wake_from_motion(void)
+{
+	if (is_sleeping) {
+		LOG_INF("Motion detected, waking up");
+		is_sleeping = false;
+		/* Wake up accelerometer */
+		pm_device_action_run(accel_dev, PM_DEVICE_ACTION_RESUME);
+		/* Restart advertising */
+		bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
+	}
+	/* Reset inactivity timer */
+	k_timer_start(&motion_timer, K_MSEC(MOTION_TIMEOUT_MS), K_NO_WAIT);
+}
+
 static void connected(struct bt_conn *conn, uint8_t err)
 {
 	if (err) {
 		LOG_ERR("Connection failed (err 0x%02x)", err);
 	} else {
 		LOG_INF("Connected to basestation");
+		is_connected = true;
+		k_timer_stop(&motion_timer);
 	}
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	LOG_INF("Disconnected from basestation (reason 0x%02x)", reason);
+	is_connected = false;
+	/* Restart motion monitoring */
+	k_timer_start(&motion_timer, K_MSEC(MOTION_TIMEOUT_MS), K_NO_WAIT);
 }
 
 BT_CONN_CB_DEFINE(conn_callbacks) = {
@@ -47,8 +90,19 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 int main(void)
 {
 	int err;
+	struct sensor_value accel[3];
 
 	LOG_INF("GuitarAcc Guitar (Peripheral) starting...");
+
+	/* Initialize accelerometer */
+	if (!device_is_ready(accel_dev)) {
+		LOG_ERR("Accelerometer device not ready");
+		return 0;
+	}
+	LOG_INF("Accelerometer initialized");
+
+	/* Initialize motion timer */
+	k_timer_init(&motion_timer, motion_timeout_handler, NULL);
 
 	err = bt_enable(NULL);
 	if (err) {
@@ -65,6 +119,47 @@ int main(void)
 	}
 
 	LOG_INF("Advertising as guitar, waiting for basestation...");
+
+	/* Start motion monitoring */
+	k_timer_start(&motion_timer, K_MSEC(MOTION_TIMEOUT_MS), K_NO_WAIT);
+
+	/* Main loop: monitor accelerometer for motion */
+	while (1) {
+		if (!is_sleeping) {
+			err = sensor_sample_fetch(accel_dev);
+			if (err == 0) {
+				sensor_channel_get(accel_dev, SENSOR_CHAN_ACCEL_XYZ, accel);
+				
+				/* Calculate magnitude of acceleration */
+				double x = sensor_value_to_double(&accel[0]);
+				double y = sensor_value_to_double(&accel[1]);
+				double z = sensor_value_to_double(&accel[2]);
+				double magnitude = sqrt(x*x + y*y + z*z);
+				
+				/* Detect motion (deviation from 1g gravity) */
+				if (fabs(magnitude - 9.81) > MOTION_THRESHOLD) {
+					/* Reset timer on motion */
+					k_timer_start(&motion_timer, K_MSEC(MOTION_TIMEOUT_MS), K_NO_WAIT);
+				}
+			}
+			k_sleep(K_MSEC(100)); /* Sample at 10Hz */
+		} else {
+			/* In sleep mode, use interrupt-driven wake */
+			err = sensor_sample_fetch(accel_dev);
+			if (err == 0) {
+				sensor_channel_get(accel_dev, SENSOR_CHAN_ACCEL_XYZ, accel);
+				double x = sensor_value_to_double(&accel[0]);
+				double y = sensor_value_to_double(&accel[1]);
+				double z = sensor_value_to_double(&accel[2]);
+				double magnitude = sqrt(x*x + y*y + z*z);
+				
+				if (fabs(magnitude - 9.81) > MOTION_THRESHOLD) {
+					wake_from_motion();
+				}
+			}
+			k_sleep(K_MSEC(500)); /* Check less frequently in sleep */
+		}
+	}
 
 	return 0;
 }

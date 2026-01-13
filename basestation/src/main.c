@@ -41,20 +41,40 @@ static bool check_guitar_uuid(struct bt_data *data, void *user_data)
 	return true;
 }
 
+static bool check_guitar_name(struct bt_data *data, void *user_data)
+{
+	bool *found = user_data;
+	const char *expected_name = "GuitarAcc Guitar";
+	size_t expected_len = strlen(expected_name);
+
+	if (data->type == BT_DATA_NAME_COMPLETE || data->type == BT_DATA_NAME_SHORTENED) {
+		if (data->data_len >= expected_len) {
+			if (memcmp(data->data, expected_name, expected_len) == 0) {
+				*found = true;
+			}
+		}
+	}
+	return true;
+}
+
 static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 			 struct net_buf_simple *ad)
 {
 	char addr_str[BT_ADDR_LE_STR_LEN];
 	int err;
 	int slot = -1;
-	bool is_guitar = false;
+	bool has_uuid = false;
+	bool has_name = false;
 
 	bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
 
 	/* Check if device advertises Guitar Service UUID */
-	bt_data_parse(ad, check_guitar_uuid, &is_guitar);
+	bt_data_parse(ad, check_guitar_uuid, &has_uuid);
 
-	if (!is_guitar) {
+	/* Check if device name matches "GuitarAcc Guitar" */
+	bt_data_parse(ad, check_guitar_name, &has_name);
+
+	if (!has_uuid || !has_name) {
 		return; /* Not a guitar device, ignore */
 	}
 

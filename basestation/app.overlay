@@ -1,0 +1,5 @@
+/* UART configuration for MIDI output */
+&uart0 {
+	status = "okay";
+	current-speed = <31250>;  /* MIDI baud rate */
+};

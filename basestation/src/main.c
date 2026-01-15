@@ -14,8 +14,19 @@
 
 LOG_MODULE_REGISTER(basestation, LOG_LEVEL_DBG);
 
+/* Enable test mode to send periodic MIDI test messages */
+#define TEST_MODE_ENABLED 1
+#define TEST_INTERVAL_MS 1000
+
+/* Set to 1 for testing via VCOM at 115200, 0 for real MIDI at 31250 */
+#define USE_VCOM_BAUD 1
+
 #define MAX_GUITARS 4
+#if USE_VCOM_BAUD
+#define MIDI_BAUD_RATE 115200
+#else
 #define MIDI_BAUD_RATE 31250
+#endif
 
 /* Custom Guitar Service UUID: a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a3f */
 #define BT_UUID_GUITAR_SERVICE_VAL \
@@ -190,6 +201,48 @@ static int init_midi_uart(void)
 	LOG_INF("MIDI UART initialized at %d baud", MIDI_BAUD_RATE);
 	return 0;
 }
+
+#if TEST_MODE_ENABLED
+static void send_midi_test_message(void)
+{
+	/* MIDI Note On message: Status (0x90 = Note On channel 0), Note (60 = Middle C), Velocity (64) */
+	uint8_t note_on[] = {0x90, 0x3C, 0x40};
+	/* MIDI Note Off message: Status (0x80 = Note Off channel 0), Note (60), Velocity (0) */
+	uint8_t note_off[] = {0x80, 0x3C, 0x00};
+	
+	if (!midi_uart) {
+		return;
+	}
+
+	/* Send Note On */
+	for (int i = 0; i < sizeof(note_on); i++) {
+		uart_poll_out(midi_uart, note_on[i]);
+	}
+	
+	LOG_INF("Test MIDI: Note ON sent (C4, velocity 64)");
+	
+	/* Wait a bit, then send Note Off */
+	k_sleep(K_MSEC(100));
+	
+	for (int i = 0; i < sizeof(note_off); i++) {
+		uart_poll_out(midi_uart, note_off[i]);
+	}
+	
+	LOG_INF("Test MIDI: Note OFF sent (C4)");
+}
+
+static void test_mode_thread(void)
+{
+	LOG_INF("Test mode enabled - sending MIDI messages every %d ms", TEST_INTERVAL_MS);
+	
+	while (1) {
+		k_sleep(K_MSEC(TEST_INTERVAL_MS));
+		send_midi_test_message();
+	}
+}
+
+K_THREAD_DEFINE(test_thread, 1024, test_mode_thread, NULL, NULL, NULL, 7, 0, 0);
+#endif
 
 int main(void)
 {

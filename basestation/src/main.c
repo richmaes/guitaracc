@@ -19,7 +19,7 @@ LOG_MODULE_REGISTER(basestation, LOG_LEVEL_DBG);
 #define TEST_INTERVAL_MS 1000
 
 /* Set to 1 for testing via VCOM at 115200, 0 for real MIDI at 31250 */
-#define USE_VCOM_BAUD 1
+//#define USE_VCOM_BAUD 1
 
 #define MAX_GUITARS 4
 #if USE_VCOM_BAUD

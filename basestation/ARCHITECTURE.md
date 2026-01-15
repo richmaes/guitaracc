@@ -17,17 +17,16 @@ The GuitarAcc system consists of two main applications:
 
 ### Application Core (CPUAPP) Pinout
 
-#### UART0 (MIDI Output via J-Link VCOM)
-- **TX**: P1.5
-- **RX**: P1.4
-- **RTS**: P1.7
-- **CTS**: P1.6
-
-#### UART1
+#### UART0 (MIDI Output - **SWAPPED PINS**)
 - **TX**: P1.9
 - **RX**: P1.8
-- **RTS**: P1.11
-- **CTS**: P1.10
+- **RTS**: P1.10
+- **CTS**: P1.11
+
+*Note: These pins were originally assigned to Network Core UART0 in the board default configuration. They have been swapped via device tree overlay.*
+
+#### UART1
+- **Status**: DISABLED (to avoid pin conflict with UART0)
 
 #### I2C1 (TWIM)
 - **SDA**: P1.2
@@ -52,13 +51,15 @@ The GuitarAcc system consists of two main applications:
 
 ### Network Core (CPUNET) Pinout
 
-#### UART0
-- **TX**: P1.9
-- **RX**: P1.8
-- **RTS**: P1.10
-- **CTS**: P1.11
+#### UART0 (**SWAPPED PINS**)
+- **TX**: P1.5
+- **RX**: P1.4
+- **RTS**: P1.7
+- **CTS**: P1.6
 
-**Note**: The network core UART0 shares pins with the application core's UART1. In the basestation application, the network core is used for Bluetooth HCI IPC and does not use UART.
+*Note: These pins were originally assigned to Application Core UART0 in the board default configuration. They have been swapped via device tree overlay (hci_ipc.overlay).*
+
+**Note**: The network core UART0 now uses pins that were originally the application core's UART0. In the basestation application, the network core is used for Bluetooth HCI IPC and does not use UART.
 
 #### SPI0 (SPIM)
 - **SCK**: P0.8
@@ -69,10 +70,11 @@ The GuitarAcc system consists of two main applications:
 
 ## Important Pin Conflicts
 
-**⚠️ UART Pin Overlap**:
-- Application Core UART1 uses: P1.9 (TX), P1.8 (RX), P1.11 (RTS), P1.10 (CTS)
-- Network Core UART0 uses: P1.9 (TX), P1.8 (RX), P1.10 (RTS), P1.11 (CTS)
-- **These peripherals cannot be used simultaneously**
+**⚠️ UART Pin Configuration - SWAPPED**:
+- Application Core UART0 now uses: P1.9 (TX), P1.8 (RX), P1.10 (RTS), P1.11 (CTS)
+- Network Core UART0 now uses: P1.5 (TX), P1.4 (RX), P1.7 (RTS), P1.6 (CTS)
+- **These pins have been swapped from the board defaults via device tree overlays**
+- Application Core UART1 is **disabled** to avoid conflict with UART0
 
 **⚠️ SPI Pin Overlap**:
 - Application Core SPI4 and Network Core SPI0 share P0.8, P0.9, P0.10
@@ -82,11 +84,12 @@ The GuitarAcc system consists of two main applications:
 
 ### UART Configuration
 - **Port**: UART0 on Application Core
-- **Pins**: TX on P1.5 (connected to J-Link VCOM0)
+- **Pins**: TX on P1.9, RX on P1.8 (swapped from default)
 - **Baud Rates**:
   - Test Mode: 115200 (for VCOM monitoring)
   - Production Mode: 31250 (MIDI standard)
 - **Control**: `USE_VCOM_BAUD` define in main.c
+- **Device Tree**: Pin configuration overridden in app.overlay
 
 ### Bluetooth Configuration
 - **Role**: Central (scans and connects to guitars)

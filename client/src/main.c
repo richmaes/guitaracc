@@ -106,7 +106,7 @@ static void wake_from_motion(void)
 		/* Wake up accelerometer */
 		pm_device_action_run(accel_dev, PM_DEVICE_ACTION_RESUME);
 		/* Restart advertising */
-		bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
+	bt_le_adv_start(BT_LE_ADV_CONN, ad, ARRAY_SIZE(ad), NULL, 0);
 	}
 	/* Reset inactivity timer */
 	k_timer_start(&motion_timer, K_MSEC(MOTION_TIMEOUT_MS), K_NO_WAIT);
@@ -190,7 +190,7 @@ int main(void)
 
 	LOG_INF("Bluetooth initialized");
 
-	err = bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
+	err = bt_le_adv_start(BT_LE_ADV_CONN, ad, ARRAY_SIZE(ad), NULL, 0);
 	if (err) {
 		LOG_ERR("Advertising failed to start (err %d)", err);
 		return 0;
@@ -217,8 +217,7 @@ int main(void)
 			LOG_INF("Test mode: Generated accel X=%d, Y=%d, Z=%d", 
 				current_accel.x, current_accel.y, current_accel.z);
 			
-			/* Use test data as motion indicator */
-			double magnitude = 10.0; /* Fake motion to keep active */
+			/* Test mode: use incrementing data */
 #else
 			err = sensor_sample_fetch(accel_dev);
 			if (err == 0) {
@@ -237,7 +236,6 @@ int main(void)
 #endif
 				/* Send notification if connected (only if data changed) */
 				if (is_connected) {
-					struct bt_conn *conn = NULL;
 					bt_conn_foreach(BT_CONN_TYPE_LE, 
 						       (void (*)(struct bt_conn *, void *))send_accel_notification,
 						       NULL);

@@ -11,6 +11,7 @@
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/drivers/uart.h>
+#include "midi_logic.h"
 
 LOG_MODULE_REGISTER(basestation, LOG_LEVEL_DBG);
 
@@ -42,18 +43,6 @@ static struct bt_uuid_128 guitar_service_uuid = BT_UUID_INIT_128(
 static struct bt_uuid_128 guitar_accel_char_uuid = BT_UUID_INIT_128(
 	BT_UUID_GUITAR_ACCEL_CHAR_VAL);
 
-/* Acceleration data structure: X, Y, Z in milli-g (int16_t, 2 bytes each = 6 bytes total) */
-struct accel_data {
-	int16_t x;  /* X-axis in milli-g */
-	int16_t y;  /* Y-axis in milli-g */
-	int16_t z;  /* Z-axis in milli-g */
-} __packed;
-
-/* MIDI Continuous Controller numbers */
-#define MIDI_CC_X_AXIS 16  /* General Purpose Controller 1 */
-#define MIDI_CC_Y_AXIS 17  /* General Purpose Controller 2 */
-#define MIDI_CC_Z_AXIS 18  /* General Purpose Controller 3 */
-
 struct guitar_connection {
 	struct bt_conn *conn;
 	uint16_t accel_handle;
@@ -63,22 +52,6 @@ struct guitar_connection {
 static struct guitar_connection guitar_conns[MAX_GUITARS];
 static const struct device *midi_uart;
 
-/* Convert milli-g value to MIDI CC value (0-127) */
-static uint8_t accel_to_midi_cc(int16_t milli_g)
-{
-	/* Input range: approximately -2000 to +2000 milli-g (±2g)
-	 * Output range: 0 to 127 (MIDI CC value)
-	 * Map -2000 -> 0, 0 -> 64, +2000 -> 127
-	 */
-	int32_t value = ((int32_t)milli_g + 2000) * 127 / 4000;
-	
-	/* Clamp to valid MIDI CC range */
-	if (value < 0) value = 0;
-	if (value > 127) value = 127;
-	
-	return (uint8_t)value;
-}
-
 static void send_midi_cc(uint8_t channel, uint8_t cc_number, uint8_t value)
 {
 	uint8_t midi_msg[3];
@@ -87,15 +60,10 @@ static void send_midi_cc(uint8_t channel, uint8_t cc_number, uint8_t value)
 		return;
 	}
 	
-	/* MIDI CC message format:
-	 * Byte 0: 0xB0 + channel (0xB0 = CC on channel 0)
-	 * Byte 1: CC number (0-127)
-	 * Byte 2: CC value (0-127)
-	 */
-	midi_msg[0] = 0xB0 | (channel & 0x0F);
-	midi_msg[1] = cc_number & 0x7F;
-	midi_msg[2] = value & 0x7F;
+	/* Construct MIDI CC message using shared logic */
+	construct_midi_cc_msg(channel, cc_number, value, midi_msg);
 	
+	/* Send via UART */
 	for (int i = 0; i < 3; i++) {
 		uart_poll_out(midi_uart, midi_msg[i]);
 	}

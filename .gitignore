@@ -40,3 +40,8 @@ Thumbs.db
 *.bak
 *.swp
 *~
+*.idx
+
+#binary files outputs
+basestation/test/test_midi_cc
+basestation/test/test_midi_cc.dSYM/*

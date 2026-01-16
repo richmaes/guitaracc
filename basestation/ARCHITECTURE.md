@@ -1,5 +1,9 @@
 # GuitarAcc System Architecture
 
+## Documentation
+
+- **[REFACTORING.md](REFACTORING.md)** - Code organization and host-based testing framework
+
 ## Hardware Platform
 
 **Development Board**: nRF5340 Audio DK  

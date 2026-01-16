@@ -18,12 +18,12 @@ The GuitarAcc system consists of two main applications:
 ### Application Core (CPUAPP) Pinout
 
 #### UART0 (MIDI Output - **SWAPPED PINS**)
-- **TX**: P1.9
-- **RX**: P1.8
+- **TX**: P1.8 (swapped)
+- **RX**: P1.9 (swapped)
 - **RTS**: P1.10
 - **CTS**: P1.11
 
-*Note: These pins were originally assigned to Network Core UART0 in the board default configuration. They have been swapped via device tree overlay.*
+*Note: TX and RX have been swapped from the original pin assignments. These pins were originally assigned to Network Core UART0 in the board default configuration. Configuration modified via device tree overlay.*
 
 #### UART1
 - **Status**: DISABLED (to avoid pin conflict with UART0)
@@ -71,9 +71,9 @@ The GuitarAcc system consists of two main applications:
 ## Important Pin Conflicts
 
 **⚠️ UART Pin Configuration - SWAPPED**:
-- Application Core UART0 now uses: P1.9 (TX), P1.8 (RX), P1.10 (RTS), P1.11 (CTS)
+- Application Core UART0 now uses: P1.8 (TX), P1.9 (RX), P1.10 (RTS), P1.11 (CTS)
 - Network Core UART0 now uses: P1.5 (TX), P1.4 (RX), P1.7 (RTS), P1.6 (CTS)
-- **These pins have been swapped from the board defaults via device tree overlays**
+- **TX and RX have been swapped from the original assignments via device tree overlays**
 - Application Core UART1 is **disabled** to avoid conflict with UART0
 
 **⚠️ SPI Pin Overlap**:
@@ -84,7 +84,7 @@ The GuitarAcc system consists of two main applications:
 
 ### UART Configuration
 - **Port**: UART0 on Application Core
-- **Pins**: TX on P1.9, RX on P1.8 (swapped from default)
+- **Pins**: TX on P1.8, RX on P1.9 (TX and RX swapped)
 - **Baud Rates**:
   - Test Mode: 115200 (for VCOM monitoring)
   - Production Mode: 31250 (MIDI standard)

@@ -17,6 +17,9 @@
 
 LOG_MODULE_REGISTER(guitar, LOG_LEVEL_DBG);
 
+/* Enable test mode to generate incrementing accelerometer data */
+#define TEST_MODE_ENABLED 1
+
 #define ACCEL_ALIAS DT_ALIAS(accel0)
 #define MOTION_TIMEOUT_MS 30000  /* 30 seconds of inactivity before sleep */
 #define MOTION_THRESHOLD 0.5     /* m/s² threshold for motion detection */
@@ -25,6 +28,10 @@ static const struct device *accel_dev = DEVICE_DT_GET(ACCEL_ALIAS);
 static struct k_timer motion_timer;
 static bool is_sleeping = false;
 static bool is_connected = false;
+
+#if TEST_MODE_ENABLED
+static int16_t test_counter = 0;
+#endif
 
 /* Custom Guitar Service UUID: a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a3f */
 #define BT_UUID_GUITAR_SERVICE_VAL \
@@ -48,7 +55,15 @@ struct accel_data {
 } __packed;
 
 static struct accel_data current_accel;
+static struct accel_data previous_accel;
 static bool accel_notify_enabled = false;
+
+static bool accel_data_changed(void)
+{
+	return (current_accel.x != previous_accel.x ||
+		current_accel.y != previous_accel.y ||
+		current_accel.z != previous_accel.z);
+}
 
 static void accel_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
 {
@@ -130,11 +145,22 @@ static int send_accel_notification(struct bt_conn *conn)
 		return 0;
 	}
 
+	/* Only send if data has changed (power optimization) */
+	if (!accel_data_changed()) {
+		return 0;
+	}
+
 	err = bt_gatt_notify(conn, &guitar_svc.attrs[1], &current_accel, sizeof(current_accel));
 	if (err) {
 		LOG_ERR("Failed to send notification (err %d)", err);
 		return err;
 	}
+
+	/* Update previous values after successful send */
+	previous_accel = current_accel;
+	
+	LOG_DBG("Sent accel: X=%d, Y=%d, Z=%d milli-g", 
+		current_accel.x, current_accel.y, current_accel.z);
 
 	return 0;
 }
@@ -178,6 +204,22 @@ int main(void)
 	/* Main loop: monitor accelerometer for motion */
 	while (1) {
 		if (!is_sleeping) {
+#if TEST_MODE_ENABLED
+			/* Test mode: generate incrementing data */
+			current_accel.x = test_counter;
+			current_accel.y = test_counter + 100;
+			current_accel.z = test_counter + 200;
+			test_counter += 10;
+			if (test_counter > 1000) {
+				test_counter = 0;
+			}
+			
+			LOG_INF("Test mode: Generated accel X=%d, Y=%d, Z=%d", 
+				current_accel.x, current_accel.y, current_accel.z);
+			
+			/* Use test data as motion indicator */
+			double magnitude = 10.0; /* Fake motion to keep active */
+#else
 			err = sensor_sample_fetch(accel_dev);
 			if (err == 0) {
 				sensor_channel_get(accel_dev, SENSOR_CHAN_ACCEL_XYZ, accel);
@@ -192,8 +234,8 @@ int main(void)
 				current_accel.x = (int16_t)((x / 9.81) * 1000.0);
 				current_accel.y = (int16_t)((y / 9.81) * 1000.0);
 				current_accel.z = (int16_t)((z / 9.81) * 1000.0);
-				
-				/* Send notification if connected */
+#endif
+				/* Send notification if connected (only if data changed) */
 				if (is_connected) {
 					struct bt_conn *conn = NULL;
 					bt_conn_foreach(BT_CONN_TYPE_LE, 
@@ -201,12 +243,14 @@ int main(void)
 						       NULL);
 				}
 				
+#ifndef TEST_MODE_ENABLED
 				/* Detect motion (deviation from 1g gravity) */
 				if (fabs(magnitude - 9.81) > MOTION_THRESHOLD) {
 					/* Reset timer on motion */
 					k_timer_start(&motion_timer, K_MSEC(MOTION_TIMEOUT_MS), K_NO_WAIT);
 				}
 			}
+#endif
 			k_sleep(K_MSEC(100)); /* Sample at 10Hz */
 		} else {
 			/* In sleep mode, use interrupt-driven wake */

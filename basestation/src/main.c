@@ -49,8 +49,163 @@ struct accel_data {
 	int16_t z;  /* Z-axis in milli-g */
 } __packed;
 
-static struct bt_conn *guitar_conns[MAX_GUITARS];
+/* MIDI Continuous Controller numbers */
+#define MIDI_CC_X_AXIS 16  /* General Purpose Controller 1 */
+#define MIDI_CC_Y_AXIS 17  /* General Purpose Controller 2 */
+#define MIDI_CC_Z_AXIS 18  /* General Purpose Controller 3 */
+
+struct guitar_connection {
+	struct bt_conn *conn;
+	uint16_t accel_handle;
+	bool subscribed;
+};
+
+static struct guitar_connection guitar_conns[MAX_GUITARS];
 static const struct device *midi_uart;
+
+/* Convert milli-g value to MIDI CC value (0-127) */
+static uint8_t accel_to_midi_cc(int16_t milli_g)
+{
+	/* Input range: approximately -2000 to +2000 milli-g (±2g)
+	 * Output range: 0 to 127 (MIDI CC value)
+	 * Map -2000 -> 0, 0 -> 64, +2000 -> 127
+	 */
+	int32_t value = ((int32_t)milli_g + 2000) * 127 / 4000;
+	
+	/* Clamp to valid MIDI CC range */
+	if (value < 0) value = 0;
+	if (value > 127) value = 127;
+	
+	return (uint8_t)value;
+}
+
+static void send_midi_cc(uint8_t channel, uint8_t cc_number, uint8_t value)
+{
+	uint8_t midi_msg[3];
+	
+	if (!midi_uart) {
+		return;
+	}
+	
+	/* MIDI CC message format:
+	 * Byte 0: 0xB0 + channel (0xB0 = CC on channel 0)
+	 * Byte 1: CC number (0-127)
+	 * Byte 2: CC value (0-127)
+	 */
+	midi_msg[0] = 0xB0 | (channel & 0x0F);
+	midi_msg[1] = cc_number & 0x7F;
+	midi_msg[2] = value & 0x7F;
+	
+	for (int i = 0; i < 3; i++) {
+		uart_poll_out(midi_uart, midi_msg[i]);
+	}
+	
+	LOG_DBG("MIDI CC ch=%d, cc=%d, val=%d", channel, cc_number, value);
+}
+
+static void process_accel_data(const struct accel_data *data, uint8_t guitar_id)
+{
+	uint8_t cc_x, cc_y, cc_z;
+	
+	/* Convert acceleration to MIDI CC values */
+	cc_x = accel_to_midi_cc(data->x);
+	cc_y = accel_to_midi_cc(data->y);
+	cc_z = accel_to_midi_cc(data->z);
+	
+	LOG_INF("Guitar %d: X=%d Y=%d Z=%d milli-g -> MIDI: X=%d Y=%d Z=%d",
+		guitar_id, data->x, data->y, data->z, cc_x, cc_y, cc_z);
+	
+	/* Send MIDI CC messages on channel 0 (can be per-guitar if needed) */
+	send_midi_cc(0, MIDI_CC_X_AXIS, cc_x);
+	send_midi_cc(0, MIDI_CC_Y_AXIS, cc_y);
+	send_midi_cc(0, MIDI_CC_Z_AXIS, cc_z);
+}
+
+static uint8_t accel_notify_callback(struct bt_conn *conn,
+				     struct bt_gatt_subscribe_params *params,
+				     const void *data, uint16_t length)
+{
+	const struct accel_data *accel;
+	int guitar_id = -1;
+	
+	if (!data) {
+		LOG_INF("Unsubscribed from acceleration notifications");
+		params->value_handle = 0;
+		return BT_GATT_ITER_STOP;
+	}
+	
+	if (length != sizeof(struct accel_data)) {
+		LOG_ERR("Invalid acceleration data length: %d", length);
+		return BT_GATT_ITER_CONTINUE;
+	}
+	
+	/* Find which guitar this is */
+	for (int i = 0; i < MAX_GUITARS; i++) {
+		if (guitar_conns[i].conn == conn) {
+			guitar_id = i;
+			break;
+		}
+	}
+	
+	if (guitar_id < 0) {
+		LOG_ERR("Notification from unknown connection");
+		return BT_GATT_ITER_CONTINUE;
+	}
+	
+	accel = (const struct accel_data *)data;
+	process_accel_data(accel, guitar_id);
+	
+	return BT_GATT_ITER_CONTINUE;
+}
+
+static struct bt_gatt_subscribe_params subscribe_params[MAX_GUITARS];
+
+static uint8_t discover_accel_char(struct bt_conn *conn,
+				   const struct bt_gatt_attr *attr,
+				   struct bt_gatt_discover_params *params)
+{
+	int err;
+	int guitar_id = -1;
+	
+	if (!attr) {
+		LOG_INF("Discover complete");
+		return BT_GATT_ITER_STOP;
+	}
+	
+	/* Find which guitar this is */
+	for (int i = 0; i < MAX_GUITARS; i++) {
+		if (guitar_conns[i].conn == conn) {
+			guitar_id = i;
+			break;
+		}
+	}
+	
+	if (guitar_id < 0) {
+		return BT_GATT_ITER_STOP;
+	}
+	
+	LOG_INF("Guitar %d: Found acceleration characteristic", guitar_id);
+	
+	/* Store handle and subscribe to notifications */
+	guitar_conns[guitar_id].accel_handle = bt_gatt_attr_value_handle(attr);
+	
+	subscribe_params[guitar_id].notify = accel_notify_callback;
+	subscribe_params[guitar_id].value = BT_GATT_CCC_NOTIFY;
+	subscribe_params[guitar_id].value_handle = guitar_conns[guitar_id].accel_handle;
+	subscribe_params[guitar_id].ccc_handle = guitar_conns[guitar_id].accel_handle + 1;
+	
+	err = bt_gatt_subscribe(conn, &subscribe_params[guitar_id]);
+	if (err) {
+		LOG_ERR("Subscribe failed (err %d)", err);
+	} else {
+		LOG_INF("Subscribed to acceleration notifications");
+		guitar_conns[guitar_id].subscribed = true;
+	}
+	
+	return BT_GATT_ITER_STOP;
+}
+
+static struct bt_gatt_discover_params discover_params[MAX_GUITARS];
 
 static bool check_guitar_uuid(struct bt_data *data, void *user_data)
 {
@@ -107,7 +262,7 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 
 	/* Find empty connection slot */
 	for (int i = 0; i < MAX_GUITARS; i++) {
-		if (!guitar_conns[i]) {
+		if (!guitar_conns[i].conn) {
 			slot = i;
 			break;
 		}
@@ -125,7 +280,7 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 	}
 
 	err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN,
-				BT_LE_CONN_PARAM_DEFAULT, &guitar_conns[slot]);
+				BT_LE_CONN_PARAM_DEFAULT, &guitar_conns[slot].conn);
 	if (err) {
 		LOG_ERR("Create conn failed (err %d)", err);
 		/* Resume scanning */
@@ -136,6 +291,8 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 static void connected(struct bt_conn *conn, uint8_t conn_err)
 {
 	char addr[BT_ADDR_LE_STR_LEN];
+	int guitar_id = -1;
+	int err;
 
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
@@ -143,9 +300,10 @@ static void connected(struct bt_conn *conn, uint8_t conn_err)
 		LOG_ERR("Failed to connect to %s (%u)", addr, conn_err);
 		/* Clear connection slot */
 		for (int i = 0; i < MAX_GUITARS; i++) {
-			if (guitar_conns[i] == conn) {
-				bt_conn_unref(guitar_conns[i]);
-				guitar_conns[i] = NULL;
+			if (guitar_conns[i].conn == conn) {
+				bt_conn_unref(guitar_conns[i].conn);
+				guitar_conns[i].conn = NULL;
+				guitar_conns[i].subscribed = false;
 				break;
 			}
 		}
@@ -156,9 +314,33 @@ static void connected(struct bt_conn *conn, uint8_t conn_err)
 
 	LOG_INF("Guitar connected: %s", addr);
 
+	/* Find which guitar slot this is */
+	for (int i = 0; i < MAX_GUITARS; i++) {
+		if (guitar_conns[i].conn == conn) {
+			guitar_id = i;
+			break;
+		}
+	}
+
+	if (guitar_id >= 0) {
+		/* Start GATT service discovery */
+		discover_params[guitar_id].uuid = &guitar_accel_char_uuid.uuid;
+		discover_params[guitar_id].func = discover_accel_char;
+		discover_params[guitar_id].start_handle = 0x0001;
+		discover_params[guitar_id].end_handle = 0xFFFF;
+		discover_params[guitar_id].type = BT_GATT_DISCOVER_CHARACTERISTIC;
+
+		err = bt_gatt_discover(conn, &discover_params[guitar_id]);
+		if (err) {
+			LOG_ERR("Discover failed (err %d)", err);
+		} else {
+			LOG_INF("Starting GATT discovery for guitar %d", guitar_id);
+		}
+	}
+
 	/* Resume scanning for more guitars if slots available */
 	for (int i = 0; i < MAX_GUITARS; i++) {
-		if (!guitar_conns[i]) {
+		if (!guitar_conns[i].conn) {
 			bt_le_scan_start(BT_LE_SCAN_ACTIVE, device_found);
 			break;
 		}
@@ -174,9 +356,11 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 
 	/* Clear connection slot */
 	for (int i = 0; i < MAX_GUITARS; i++) {
-		if (guitar_conns[i] == conn) {
-			bt_conn_unref(guitar_conns[i]);
-			guitar_conns[i] = NULL;
+		if (guitar_conns[i].conn == conn) {
+			bt_conn_unref(guitar_conns[i].conn);
+			guitar_conns[i].conn = NULL;
+			guitar_conns[i].subscribed = false;
+			guitar_conns[i].accel_handle = 0;
 			break;
 		}
 	}

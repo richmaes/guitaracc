@@ -30,8 +30,42 @@ static bool is_connected = false;
 #define BT_UUID_GUITAR_SERVICE_VAL \
 	BT_UUID_128_ENCODE(0xa7c8f9d2, 0x4b3e, 0x4a1d, 0x9f2c, 0x8e7d6c5b4a3f)
 
+/* Acceleration Data Characteristic UUID: a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a40 */
+#define BT_UUID_GUITAR_ACCEL_CHAR_VAL \
+	BT_UUID_128_ENCODE(0xa7c8f9d2, 0x4b3e, 0x4a1d, 0x9f2c, 0x8e7d6c5b4a40)
+
 static struct bt_uuid_128 guitar_service_uuid = BT_UUID_INIT_128(
 	BT_UUID_GUITAR_SERVICE_VAL);
+
+static struct bt_uuid_128 guitar_accel_char_uuid = BT_UUID_INIT_128(
+	BT_UUID_GUITAR_ACCEL_CHAR_VAL);
+
+/* Acceleration data structure: X, Y, Z in milli-g (int16_t, 2 bytes each = 6 bytes total) */
+struct accel_data {
+	int16_t x;  /* X-axis in milli-g */
+	int16_t y;  /* Y-axis in milli-g */
+	int16_t z;  /* Z-axis in milli-g */
+} __packed;
+
+static struct accel_data current_accel;
+static bool accel_notify_enabled = false;
+
+static void accel_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
+{
+	accel_notify_enabled = (value == BT_GATT_CCC_NOTIFY);
+	LOG_INF("Acceleration notifications %s", accel_notify_enabled ? "enabled" : "disabled");
+}
+
+/* Guitar GATT Service Definition */
+BT_GATT_SERVICE_DEFINE(guitar_svc,
+	BT_GATT_PRIMARY_SERVICE(&guitar_service_uuid),
+	BT_GATT_CHARACTERISTIC(&guitar_accel_char_uuid.uuid,
+			       BT_GATT_CHRC_NOTIFY,
+			       BT_GATT_PERM_NONE,
+			       NULL, NULL, NULL),
+	BT_GATT_CCC(accel_ccc_cfg_changed,
+		    BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
+);
 
 static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
@@ -78,6 +112,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	LOG_INF("Disconnected from basestation (reason 0x%02x)", reason);
 	is_connected = false;
+	accel_notify_enabled = false;
 	/* Restart motion monitoring */
 	k_timer_start(&motion_timer, K_MSEC(MOTION_TIMEOUT_MS), K_NO_WAIT);
 }
@@ -86,6 +121,23 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected = connected,
 	.disconnected = disconnected,
 };
+
+static int send_accel_notification(struct bt_conn *conn)
+{
+	int err;
+	
+	if (!accel_notify_enabled) {
+		return 0;
+	}
+
+	err = bt_gatt_notify(conn, &guitar_svc.attrs[1], &current_accel, sizeof(current_accel));
+	if (err) {
+		LOG_ERR("Failed to send notification (err %d)", err);
+		return err;
+	}
+
+	return 0;
+}
 
 int main(void)
 {
@@ -135,6 +187,19 @@ int main(void)
 				double y = sensor_value_to_double(&accel[1]);
 				double z = sensor_value_to_double(&accel[2]);
 				double magnitude = sqrt(x*x + y*y + z*z);
+				
+				/* Convert to milli-g (1g = 9.81 m/s²) and store */
+				current_accel.x = (int16_t)((x / 9.81) * 1000.0);
+				current_accel.y = (int16_t)((y / 9.81) * 1000.0);
+				current_accel.z = (int16_t)((z / 9.81) * 1000.0);
+				
+				/* Send notification if connected */
+				if (is_connected) {
+					struct bt_conn *conn = NULL;
+					bt_conn_foreach(BT_CONN_TYPE_LE, 
+						       (void (*)(struct bt_conn *, void *))send_accel_notification,
+						       NULL);
+				}
 				
 				/* Detect motion (deviation from 1g gravity) */
 				if (fabs(magnitude - 9.81) > MOTION_THRESHOLD) {

@@ -32,8 +32,22 @@ LOG_MODULE_REGISTER(basestation, LOG_LEVEL_DBG);
 #define BT_UUID_GUITAR_SERVICE_VAL \
 	BT_UUID_128_ENCODE(0xa7c8f9d2, 0x4b3e, 0x4a1d, 0x9f2c, 0x8e7d6c5b4a3f)
 
+/* Acceleration Data Characteristic UUID: a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a40 */
+#define BT_UUID_GUITAR_ACCEL_CHAR_VAL \
+	BT_UUID_128_ENCODE(0xa7c8f9d2, 0x4b3e, 0x4a1d, 0x9f2c, 0x8e7d6c5b4a40)
+
 static struct bt_uuid_128 guitar_service_uuid = BT_UUID_INIT_128(
 	BT_UUID_GUITAR_SERVICE_VAL);
+
+static struct bt_uuid_128 guitar_accel_char_uuid = BT_UUID_INIT_128(
+	BT_UUID_GUITAR_ACCEL_CHAR_VAL);
+
+/* Acceleration data structure: X, Y, Z in milli-g (int16_t, 2 bytes each = 6 bytes total) */
+struct accel_data {
+	int16_t x;  /* X-axis in milli-g */
+	int16_t y;  /* Y-axis in milli-g */
+	int16_t z;  /* Z-axis in milli-g */
+} __packed;
 
 static struct bt_conn *guitar_conns[MAX_GUITARS];
 static const struct device *midi_uart;

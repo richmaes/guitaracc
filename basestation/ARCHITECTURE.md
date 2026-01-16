@@ -108,16 +108,112 @@ The GuitarAcc system consists of two main applications:
 
 ### Target Hardware
 - **Board**: Nordic Thingy:53 (thingy53/nrf5340/cpuapp)
-- **Accelerometer**: ADXL362
+- **Accelerometer**: ADXL362 (SPI interface)
+- **Connectivity**: Bluetooth LE (Peripheral role)
+- **Power**: Battery-powered with sleep modes
+
+### Accelerometer Configuration
+- **Range**: ±2g (CONFIG_ADXL362_ACCEL_RANGE_2G)
+- **Sampling Rate**: 10Hz when active, 2Hz when sleeping
+- **Motion Threshold**: 0.5 m/s² deviation from 1g (gravity)
+- **Interrupt Mode**: 0 (polling-based)
+- **Power Management**: Automatic suspend/resume based on motion
 
 ### Bluetooth Configuration
 - **Role**: Peripheral
 - **Device Name**: "GuitarAcc Guitar"
 - **Service UUID**: `a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a3f`
+- **Advertising**: Starts automatically on boot or wake from motion
+- **Max Connections**: 1 (to basestation)
+
+#### GATT Service Structure
+**Guitar Service** (`a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a3f`)
+- **Acceleration Characteristic** (`a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a40`)
+  - Properties: NOTIFY
+  - Data Format: 6 bytes packed structure
+    - X-axis: int16_t (milli-g)
+    - Y-axis: int16_t (milli-g)  
+    - Z-axis: int16_t (milli-g)
+  - Update Rate: 10Hz when connected
+  - Client Characteristic Configuration Descriptor (CCCD) for enabling/disabling notifications
 
 ### Power Management
-- Motion-based wake/sleep
-- Low-power accelerometer configuration
+- **Active Mode**: 
+  - Accelerometer sampling at 10Hz
+  - Bluetooth advertising/connected
+  - Motion timeout: 30 seconds of inactivity
+  
+- **Sleep Mode**:
+  - Triggered after 30 seconds without motion
+  - Bluetooth advertising stopped
+  - Accelerometer in low-power motion detection mode
+  - Sampling reduced to 2Hz
+  
+- **Wake Conditions**:
+  - Motion detected above threshold
+  - Automatically resumes advertising
+  - Resets motion timeout
+
+### Motion Detection Algorithm
+```c
+// Calculate acceleration magnitude
+magnitude = sqrt(x² + y² + z²)
+
+// Detect motion (deviation from 1g gravity)
+if (|magnitude - 9.81| > 0.5 m/s²) {
+    motion_detected = true
+}
+```
+
+### Data Flow (Current Implementation)
+1. **Initialization**: 
+   - Enable accelerometer
+   - Enable Bluetooth
+   - Start advertising
+   - Start motion timer
+
+2. **Active Mode**:
+   - Sample accelerometer at 10Hz
+   - Monitor for motion to reset sleep timer
+   - Wait for basestation connection
+
+3. **Connected**:
+   - Stop motion timer (stay active)
+   - Continue accelerometer monitoring at 10Hz
+   - Wait for basestation to enable notifications (CCCD write)
+   - Send acceleration data (X, Y, Z) via GATT notifications at 10Hz
+
+4. **Sleep Mode**:
+   - Reduce sampling to 2Hz
+   - Stop advertising
+   - Wake on motion detection
+
+### Pin Assignments - Thingy:53
+
+The Thingy:53 has most peripherals pre-configured on the board. Key interfaces:
+
+#### ADXL362 Accelerometer (SPI)
+- Connected via internal SPI bus
+- Configured via device tree (accel0 alias)
+
+#### Bluetooth
+- Uses network core (nRF5340 CPUNET)
+- HCI IPC communication with application core
+
+#### Power
+- Battery-powered
+- Power management enabled
+- USB charging support
+
+### Future Enhancements (Client)
+- [x] **GATT Service**: Implement custom service for acceleration data ✓
+- [x] **GATT Characteristic**: Real-time acceleration streaming ✓
+- [ ] **Interrupt-based motion**: Use ADXL362 hardware interrupts
+- [ ] **Battery level reporting**: Add battery service
+- [ ] **LED indicators**: Status feedback (connected/advertising/sleep)
+- [ ] **Button support**: Manual wake or mode selection
+- [ ] **Calibration**: Automatic or manual calibration routine
+- [ ] **Data filtering**: Apply low-pass filter to acceleration data
 
 ## Build System
 

@@ -14,6 +14,7 @@
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/pm/device.h>
 #include <math.h>
+#include "motion_logic.h"
 
 LOG_MODULE_REGISTER(guitar, LOG_LEVEL_DBG);
 
@@ -22,7 +23,6 @@ LOG_MODULE_REGISTER(guitar, LOG_LEVEL_DBG);
 
 #define ACCEL_ALIAS DT_ALIAS(accel0)
 #define MOTION_TIMEOUT_MS 30000  /* 30 seconds of inactivity before sleep */
-#define MOTION_THRESHOLD 0.5     /* m/s² threshold for motion detection */
 
 static const struct device *accel_dev = DEVICE_DT_GET(ACCEL_ALIAS);
 static struct k_timer motion_timer;
@@ -47,23 +47,9 @@ static struct bt_uuid_128 guitar_service_uuid = BT_UUID_INIT_128(
 static struct bt_uuid_128 guitar_accel_char_uuid = BT_UUID_INIT_128(
 	BT_UUID_GUITAR_ACCEL_CHAR_VAL);
 
-/* Acceleration data structure: X, Y, Z in milli-g (int16_t, 2 bytes each = 6 bytes total) */
-struct accel_data {
-	int16_t x;  /* X-axis in milli-g */
-	int16_t y;  /* Y-axis in milli-g */
-	int16_t z;  /* Z-axis in milli-g */
-} __packed;
-
 static struct accel_data current_accel;
 static struct accel_data previous_accel;
 static bool accel_notify_enabled = false;
-
-static bool accel_data_changed(void)
-{
-	return (current_accel.x != previous_accel.x ||
-		current_accel.y != previous_accel.y ||
-		current_accel.z != previous_accel.z);
-}
 
 static void accel_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
 {
@@ -146,7 +132,7 @@ static int send_accel_notification(struct bt_conn *conn)
 	}
 
 	/* Only send if data has changed (power optimization) */
-	if (!accel_data_changed()) {
+	if (!accel_data_changed(&current_accel, &previous_accel)) {
 		return 0;
 	}
 
@@ -223,16 +209,13 @@ int main(void)
 			if (err == 0) {
 				sensor_channel_get(accel_dev, SENSOR_CHAN_ACCEL_XYZ, accel);
 				
-				/* Calculate magnitude of acceleration */
+				/* Get acceleration values */
 				double x = sensor_value_to_double(&accel[0]);
 				double y = sensor_value_to_double(&accel[1]);
 				double z = sensor_value_to_double(&accel[2]);
-				double magnitude = sqrt(x*x + y*y + z*z);
 				
-				/* Convert to milli-g (1g = 9.81 m/s²) and store */
-				current_accel.x = (int16_t)((x / 9.81) * 1000.0);
-				current_accel.y = (int16_t)((y / 9.81) * 1000.0);
-				current_accel.z = (int16_t)((z / 9.81) * 1000.0);
+				/* Convert to milli-g and store */
+				convert_accel_to_milli_g(x, y, z, &current_accel);
 #endif
 				/* Send notification if connected (only if data changed) */
 				if (is_connected) {
@@ -242,8 +225,8 @@ int main(void)
 				}
 				
 #ifndef TEST_MODE_ENABLED
-				/* Detect motion (deviation from 1g gravity) */
-				if (fabs(magnitude - 9.81) > MOTION_THRESHOLD) {
+				/* Detect motion using motion_logic */
+				if (detect_motion(x, y, z)) {
 					/* Reset timer on motion */
 					k_timer_start(&motion_timer, K_MSEC(MOTION_TIMEOUT_MS), K_NO_WAIT);
 				}
@@ -251,16 +234,15 @@ int main(void)
 #endif
 			k_sleep(K_MSEC(100)); /* Sample at 10Hz */
 		} else {
-			/* In sleep mode, use interrupt-driven wake */
+			/* In sleep mode, poll for wake */
 			err = sensor_sample_fetch(accel_dev);
 			if (err == 0) {
 				sensor_channel_get(accel_dev, SENSOR_CHAN_ACCEL_XYZ, accel);
 				double x = sensor_value_to_double(&accel[0]);
 				double y = sensor_value_to_double(&accel[1]);
 				double z = sensor_value_to_double(&accel[2]);
-				double magnitude = sqrt(x*x + y*y + z*z);
 				
-				if (fabs(magnitude - 9.81) > MOTION_THRESHOLD) {
+				if (detect_motion(x, y, z)) {
 					wake_from_motion();
 				}
 			}

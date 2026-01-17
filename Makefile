@@ -46,7 +46,7 @@ check-west:
 # Testing Targets
 #==============================================================================
 
-test: test-basestation
+test: test-basestation test-client
 	@echo ""
 	@echo "$(GREEN)✅ All tests passed!$(NC)"
 	@echo ""
@@ -62,8 +62,8 @@ test-client:
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Testing Client Application$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@echo "$(YELLOW)⚠ Client tests not yet implemented$(NC)"
-	@echo "$(GREEN)✓ Client tests passed (skipped)$(NC)"
+	@cd client/test && $(MAKE) test
+	@echo "$(GREEN)✓ Client tests passed$(NC)"
 
 #==============================================================================
 # Build Targets
@@ -162,6 +162,7 @@ clean: clean-tests clean-builds
 clean-tests:
 	@echo "Cleaning test artifacts..."
 	@cd basestation/test && $(MAKE) clean || true
+	@cd client/test && $(MAKE) clean || true
 
 clean-builds:
 	@echo "Cleaning build artifacts..."
@@ -238,7 +239,7 @@ help:
 	@echo ""
 	@echo "$(YELLOW)Individual Application Targets:$(NC)"
 	@echo "  make test-basestation        - Test basestation logic"
-	@echo "  make test-client             - Test client logic (not yet implemented)"
+	@echo "  make test-client             - Test client motion detection logic"
 	@echo "  make build-basestation       - Build basestation firmware"
 	@echo "  make build-client            - Build client firmware"
 	@echo "  make rebuild-basestation     - Pristine rebuild of basestation"

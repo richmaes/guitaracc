@@ -45,3 +45,4 @@ Thumbs.db
 #binary files outputs
 basestation/test/test_midi_cc
 basestation/test/test_midi_cc.dSYM/*
+client/test/test_motion.dSYM/Contents/Info.plist

@@ -6,7 +6,7 @@
 # 3. Optionally flash to connected devices
 
 .PHONY: all test build flash clean help check-west
-.PHONY: test-basestation test-client
+.PHONY: test-basestation test-client test-integration
 .PHONY: build-basestation build-client
 .PHONY: flash-basestation flash-client
 
@@ -46,7 +46,7 @@ check-west:
 # Testing Targets
 #==============================================================================
 
-test: test-basestation test-client
+test: test-basestation test-client test-integration
 	@echo ""
 	@echo "$(GREEN)✅ All tests passed!$(NC)"
 	@echo ""
@@ -64,6 +64,13 @@ test-client:
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@cd client/test && $(MAKE) test
 	@echo "$(GREEN)✓ Client tests passed$(NC)"
+
+test-integration:
+	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@echo "$(YELLOW)Integration Tests (Software-in-the-Loop)$(NC)"
+	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@cd integration_test && $(MAKE) run
+	@echo "$(GREEN)✓ Integration tests passed$(NC)"
 
 #==============================================================================
 # Build Targets
@@ -156,6 +163,7 @@ flash-client: check-west
 # Clean Targets
 #==============================================================================
 
+	@cd integration_test && $(MAKE) clean || true
 clean: clean-tests clean-builds
 	@echo "$(GREEN)✓ Cleanup complete$(NC)"
 
@@ -231,14 +239,15 @@ help:
 	@echo "GuitarAcc Project - Build & Test System"
 	@echo ""
 	@echo "$(YELLOW)Primary Targets:$(NC)"
-	@echo "  make all              - Run tests, then build all applications (default)"
-	@echo "  make test             - Run all host-based unit tests"
+	@echo "  make all              - Run tests, then buitests (unit + integration)"
 	@echo "  make build            - Build firmware for all targets (after tests)"
 	@echo "  make rebuild          - Clean and rebuild everything from scratch"
 	@echo "  make flash            - Flash firmware to all connected devices"
 	@echo ""
 	@echo "$(YELLOW)Individual Application Targets:$(NC)"
 	@echo "  make test-basestation        - Test basestation logic"
+	@echo "  make test-client             - Test client motion detection logic"
+	@echo "  make test-integration        - Software-in-the-Loop integration tests
 	@echo "  make test-client             - Test client motion detection logic"
 	@echo "  make build-basestation       - Build basestation firmware"
 	@echo "  make build-client            - Build client firmware"

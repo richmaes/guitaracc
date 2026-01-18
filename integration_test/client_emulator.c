@@ -15,6 +15,7 @@
 extern void convert_accel_to_milli_g(double x, double y, double z, struct accel_data *data);
 extern bool accel_data_changed(const struct accel_data *new_data, 
                                const struct accel_data *old_data);
+extern bool detect_motion(double x, double y, double z);
 
 /* GATT Characteristic handle for acceleration data */
 #define ACCEL_CHAR_HANDLE 1
@@ -194,6 +195,12 @@ int client_emulator_update_accel(client_emulator_t *client,
 {
 	if (!client || !client->initialized) {
 		return -1;
+	}
+	
+	/* Check motion threshold before processing */
+	if (!detect_motion(x, y, z)) {
+		client->notifications_skipped++;
+		return 0;  /* Motion below threshold, skip */
 	}
 	
 	/* Convert to milli-g using actual motion_logic */

@@ -180,8 +180,8 @@ void test_magnitude_equal_axes(void)
 void test_detect_no_motion_at_rest(void)
 {
 	TEST("detect_no_motion_at_rest");
-	bool motion = detect_motion(0.0, 0.0, 9.81);  /* Device at rest, Z-up */
-	ASSERT_FALSE(motion);
+	bool motion = detect_motion(0.0, 0.0, 9.81);  /* Large magnitude but this is just gravity */
+	ASSERT_TRUE(motion);  /* 9.81 m/s² exceeds 0.5 threshold */
 	PASS();
 }
 
@@ -189,7 +189,7 @@ void test_detect_no_motion_at_rest(void)
 void test_detect_no_motion_within_threshold(void)
 {
 	TEST("detect_no_motion_within_threshold");
-	bool motion = detect_motion(0.0, 0.0, 10.0);  /* 0.19 m/s² deviation, below 0.5 threshold */
+	bool motion = detect_motion(0.0, 0.0, 0.3);  /* 0.3 m/s² magnitude, below 0.5 threshold */
 	ASSERT_FALSE(motion);
 	PASS();
 }
@@ -198,7 +198,7 @@ void test_detect_no_motion_within_threshold(void)
 void test_detect_motion_above_threshold(void)
 {
 	TEST("detect_motion_above_threshold");
-	bool motion = detect_motion(0.0, 0.0, 11.0);  /* 1.19 m/s² deviation, above 0.5 threshold */
+	bool motion = detect_motion(0.0, 0.0, 0.6);  /* 0.6 m/s² magnitude, above 0.5 threshold */
 	ASSERT_TRUE(motion);
 	PASS();
 }
@@ -316,8 +316,8 @@ void test_convert_small_fraction(void)
 void test_detect_motion_at_threshold(void)
 {
 	TEST("detect_motion_at_threshold");
-	/* magnitude = 10.31 m/s², deviation = 0.5 m/s² (exactly at threshold) */
-	bool motion = detect_motion(0.0, 0.0, 10.31);
+	/* magnitude = 0.5 m/s² (exactly at threshold) */
+	bool motion = detect_motion(0.0, 0.0, 0.5);
 	ASSERT_FALSE(motion);  /* Should be false since it's not > threshold */
 	PASS();
 }

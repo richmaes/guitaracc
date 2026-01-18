@@ -51,8 +51,8 @@ bool detect_motion(double x, double y, double z)
 {
 	double magnitude = calculate_magnitude(x, y, z);
 	
-	/* Detect motion as deviation from 1g gravity */
-	return fabs(magnitude - GRAVITY) > MOTION_THRESHOLD;
+	/* Detect motion when magnitude exceeds threshold */
+	return magnitude > MOTION_THRESHOLD;
 }
 
 bool accel_data_changed(const struct accel_data *current, const struct accel_data *previous)

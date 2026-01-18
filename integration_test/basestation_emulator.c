@@ -62,6 +62,8 @@ int basestation_emulator_init(basestation_emulator_t *base)
 	base->initialized = true;
 	g_base = base;
 	
+	printf("[BASESTATION DEBUG] Init: base=%p, g_base=%p\n", (void*)base, (void*)g_base);
+	
 	return 0;
 }
 
@@ -70,6 +72,8 @@ void basestation_emulator_cleanup(basestation_emulator_t *base)
 	if (!base || !base->initialized) {
 		return;
 	}
+	
+	printf("[BASESTATION DEBUG] Cleanup: base=%p, g_base=%p\n", (void*)base, (void*)g_base);
 	
 	if (base->scanning) {
 		basestation_emulator_stop_scan(base);
@@ -248,6 +252,9 @@ static void basestation_notify_cb(ble_conn_handle_t handle, ble_gatt_handle_t ch
 	const struct accel_data *accel = (const struct accel_data *)data;
 	guitar->last_accel = *accel;
 	g_base->packets_received++;
+	
+	printf("[BASESTATION DEBUG] Notify callback: g_base=%p, packets_received=%u\n",
+	       (void*)g_base, g_base->packets_received);
 	
 	/* Convert to MIDI using actual midi_logic */
 	uint8_t midi_x = accel_to_midi_cc(accel->x);

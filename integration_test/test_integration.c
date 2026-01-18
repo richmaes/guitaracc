@@ -257,16 +257,58 @@ static void test_motion_threshold(void)
 	struct accel_data small = {10, 10, 10};  /* magnitude ~17 milli-g */
 	client_emulator_update_accel(&client, 0.1, 0.1, 0.1);  /* Small values in m/s² */
 	
-	/* No notification should be sent */
-	TEST_ASSERT(base.packets_received == 0, "Packet sent for small motion");
+	/* Process events to see if small motion packet was sent */
+	ble_hal_process_events();
+	
+	/* Check if small motion packet was filtered */
+	printf("[TEST DEBUG] After small motion: packets_received=%u\n", base.packets_received);
+	if (base.packets_received > 0) {
+		printf("  ❌ Small motion NOT filtered:\n");
+		printf("     Received: X=%d, Y=%d, Z=%d milli-g\n",
+		       base.guitars[0].last_accel.x,
+		       base.guitars[0].last_accel.y,
+		       base.guitars[0].last_accel.z);
+		printf("     Expected: 0 packets (motion threshold should filter magnitudes < ~51 milli-g)\n");
+		TEST_ASSERT(false, "Small motion packet was transmitted but should be filtered by motion threshold");
+	}
 	
 	/* Send large motion (above threshold) */
 	struct accel_data large = {100, 100, 100};  /* magnitude ~173 milli-g > 51 */
 	client_emulator_update_accel(&client, 1.0, 1.0, 1.0);  /* Larger values in m/s² */
 	ble_hal_process_events();
 	
-	/* Notification should be sent */
-	TEST_ASSERT(base.packets_received == 1, "No packet sent for large motion");
+	/* Verify large motion packet was received */
+	printf("[TEST DEBUG] After large motion: packets_received=%u\n", base.packets_received);
+	if (base.packets_received == 0) {
+		printf("  ❌ No packets received:\n");
+		printf("     Expected: 1 packet with large motion (X≈101, Y≈101, Z≈101 milli-g)\n");
+		TEST_ASSERT(false, "Large motion packet was not transmitted");
+	} else if (base.packets_received > 1) {
+		printf("  ❌ Too many packets received:\n");
+		printf("     Received: %u packets\n", base.packets_received);
+		printf("     Last packet: X=%d, Y=%d, Z=%d milli-g\n",
+		       base.guitars[0].last_accel.x,
+		       base.guitars[0].last_accel.y,
+		       base.guitars[0].last_accel.z);
+		printf("     Expected: 1 packet (large motion only, small motion should be filtered)\n");
+		TEST_ASSERT(false, "Small motion packet was not filtered");
+	} else {
+		/* Check that the received packet is the large motion one */
+		struct accel_data *received = &base.guitars[0].last_accel;
+		printf("[TEST DEBUG] Received single packet: X=%d, Y=%d, Z=%d milli-g\n",
+		       received->x, received->y, received->z);
+		
+		/* Large motion should be ~101 milli-g (1.0 m/s² * 1000 / 9.81) */
+		if (received->x < 90 || received->x > 110 ||
+		    received->y < 90 || received->y > 110 ||
+		    received->z < 90 || received->z > 110) {
+			printf("  ❌ Wrong packet content:\n");
+			printf("     Received: X=%d, Y=%d, Z=%d milli-g\n",
+			       received->x, received->y, received->z);
+			printf("     Expected: X≈101, Y≈101, Z≈101 milli-g (large motion)\n");
+			TEST_ASSERT(false, "Received packet does not match expected large motion values");
+		}
+	}
 	
 	/* Cleanup */
 	client_emulator_cleanup(&client);

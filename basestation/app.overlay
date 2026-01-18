@@ -10,6 +10,11 @@
 
 /* Override UART0 pinctrl - TX and RX swapped: TX=P1.8, RX=P1.9, RTS=P1.10, CTS=P1.11 */
 &pinctrl {
+	/delete-node/ uart0_default;
+	/delete-node/ uart0_sleep;
+};
+
+&pinctrl {
 	uart0_default: uart0_default {
 		group1 {
 			psels = <NRF_PSEL(UART_TX, 1, 8)>,

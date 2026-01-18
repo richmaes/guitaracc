@@ -13,6 +13,8 @@
 # Default target: test then build
 all: test build
 
+WEST_PYTHON := /opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12
+
 # Colors for output
 GREEN := \033[0;32m
 YELLOW := \033[0;33m
@@ -100,7 +102,7 @@ build-client: check-west
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Building Client for Thingy:53$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@cd client && west build -b thingy53/nrf5340/cpuapp --build-dir build --sysbuild
+	@cd client && CMAKE=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake west build -b thingy53/nrf5340/cpuapp --build-dir build --sysbuild -- -DPython3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dclient_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dmcuboot_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dempty_net_core_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Db0n_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12
 	@echo "$(GREEN)✓ Client build complete$(NC)"
 
 #==============================================================================
@@ -127,7 +129,8 @@ rebuild-client: check-west
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Pristine build: Client$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@cd client && west build -b thingy53/nrf5340/cpuapp --build-dir build --sysbuild --pristine
+#	@cd client && CMAKE=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake west build -b thingy53/nrf5340/cpuapp --build-dir build --sysbuild --pristine -- -DPython3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dclient_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dmcuboot_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dempty_net_core_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Db0n_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12
+	@cd client && CMAKE_COMMAND=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake && west build --build-dir /Users/richmaes/src/guitaracc/client/build /Users/richmaes/src/guitaracc/client --pristine --board thingy53/nrf5340/cpuapp --sysbuild -- -DDEBUG_THREAD_INFO=Off -DPython3_EXECUTABLE=$(WEST_PYTHON) -Dclient_Python3_EXECUTABLE=$($(WEST_PYTHON)) -Dmcuboot_Python3_EXECUTABLE=$(WEST_PYTHON) -Dempty_net_core_Python3_EXECUTABLE=$(WEST_PYTHON) -Db0n_Python3_EXECUTABLE=$(WEST_PYTHON) -Dclient_DEBUG_THREAD_INFO=Off -Dmcuboot_DEBUG_THREAD_INFO=Off -Dempty_net_core_DEBUG_THREAD_INFO=Off -Db0n_DEBUG_THREAD_INFO=Off
 	@echo "$(GREEN)✓ Client pristine build complete$(NC)"
 
 #==============================================================================

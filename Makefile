@@ -106,7 +106,8 @@ build-basestation: check-west
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Building Basestation for nRF5340 Audio DK$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@cd basestation && west build -b nrf5340_audio_dk/nrf5340/cpuapp --build-dir build
+	@cd basestation && west build -b nrf5340_audio_dk/nrf5340/cpuapp --build-dir build 2>&1 | tee build/build.log
+	@$(MAKE) validate-basestation-overlays
 	@echo "$(GREEN)✓ Basestation build complete$(NC)"
 
 build-client: check-west
@@ -114,7 +115,8 @@ build-client: check-west
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Building Client for Thingy:53$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@cd client && CMAKE=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake west build -b thingy53/nrf5340/cpuapp --build-dir build --sysbuild -- -DPython3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dclient_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dmcuboot_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dempty_net_core_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Db0n_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12
+	@cd client && CMAKE=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake west build -b thingy53/nrf5340/cpuapp --build-dir build --sysbuild -- -DPython3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dclient_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dmcuboot_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dempty_net_core_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Db0n_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 2>&1 | tee build/build.log
+	@$(MAKE) validate-client-overlays
 	@echo "$(GREEN)✓ Client build complete$(NC)"
 
 #==============================================================================
@@ -295,3 +297,103 @@ help:
 	@echo "  Verification:  make verify"
 	@echo "  CI pipeline:   make ci"
 	@echo ""
+
+#==============================================================================
+# Overlay Validation Targets
+#==============================================================================
+
+.PHONY: validate-basestation-overlays validate-client-overlays
+
+validate-basestation-overlays:
+	@echo ""
+	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@echo "$(YELLOW)Validating Basestation Overlay Application$(NC)"
+	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@VALIDATION_FAILED=0; \
+	DTS_FILE="basestation/build/basestation/zephyr/zephyr.dts"; \
+	if [ ! -f "$$DTS_FILE" ]; then \
+		echo "$(RED)✗ Compiled devicetree not found: $$DTS_FILE$(NC)"; \
+		echo "$(YELLOW)  Build may not have completed successfully$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "Checking compiled devicetree: $$DTS_FILE"; \
+	echo ""; \
+	echo "$(YELLOW)Verifying overlay file application:$(NC)"; \
+	if grep -q "guitaracc/basestation/app.overlay" "$$DTS_FILE"; then \
+		echo "$(GREEN)✓ app.overlay applied (referenced in devicetree)$(NC)"; \
+	else \
+		echo "$(RED)✗ app.overlay NOT applied$(NC)"; \
+		VALIDATION_FAILED=1; \
+	fi; \
+	if grep -q "guitaracc/basestation/hci_ipc.overlay" "$$DTS_FILE" || \
+	   find basestation/build -name "*.dts" -exec grep -l "hci_ipc.overlay" {} \; | grep -q .; then \
+		echo "$(GREEN)✓ hci_ipc.overlay applied (referenced in devicetree)$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠ hci_ipc.overlay not found in main devicetree (may be in network core)$(NC)"; \
+	fi; \
+	echo ""; \
+	echo "$(YELLOW)Verifying UART0 configuration:$(NC)"; \
+	if grep -A 10 "uart0:" "$$DTS_FILE" | grep -q "status.*=.*\"okay\""; then \
+		echo "$(GREEN)✓ UART0 is enabled$(NC)"; \
+	else \
+		echo "$(RED)✗ UART0 is not enabled$(NC)"; \
+		VALIDATION_FAILED=1; \
+	fi; \
+	if grep -A 10 "uart0:" "$$DTS_FILE" | grep -q "current-speed.*=.*<.*0x7a12.*>"; then \
+		echo "$(GREEN)✓ UART baud rate: 31250 (0x7a12 - MIDI standard)$(NC)"; \
+	else \
+		echo "$(RED)✗ UART baud rate NOT set to 31250$(NC)"; \
+		VALIDATION_FAILED=1; \
+	fi; \
+	echo ""; \
+	echo "$(YELLOW)Verifying UART pin mapping:$(NC)"; \
+	if grep -A 20 "uart0_default:" "$$DTS_FILE" | grep -B 2 -A 2 "group1" | grep -q "0x28"; then \
+		echo "$(GREEN)✓ UART TX pin: P1.8 (psel 0x28)$(NC)"; \
+	else \
+		echo "$(RED)✗ UART TX pin NOT configured to P1.8$(NC)"; \
+		VALIDATION_FAILED=1; \
+	fi; \
+	if grep -A 20 "uart0_default:" "$$DTS_FILE" | grep -B 2 -A 2 "group2" | grep -q "0x1000029"; then \
+		echo "$(GREEN)✓ UART RX pin: P1.9 (psel 0x1000029)$(NC)"; \
+	else \
+		echo "$(RED)✗ UART RX pin NOT configured to P1.9$(NC)"; \
+		VALIDATION_FAILED=1; \
+	fi; \
+	if grep -A 20 "uart0_default:" "$$DTS_FILE" | grep -B 2 -A 2 "group1" | grep -q "0x200002a"; then \
+		echo "$(GREEN)✓ UART RTS pin: P1.10 (psel 0x200002a)$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠ UART RTS pin configuration not confirmed$(NC)"; \
+	fi; \
+	if grep -A 20 "uart0_default:" "$$DTS_FILE" | grep -B 2 -A 2 "group2" | grep -q "0x300002b"; then \
+		echo "$(GREEN)✓ UART CTS pin: P1.11 (psel 0x300002b)$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠ UART CTS pin configuration not confirmed$(NC)"; \
+	fi; \
+	if [ $$VALIDATION_FAILED -eq 1 ]; then \
+		echo ""; \
+		echo "$(RED)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"; \
+		echo "$(RED)✗ Overlay validation FAILED$(NC)"; \
+		echo "$(RED)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"; \
+		echo "$(YELLOW)Review $$DTS_FILE for actual configuration$(NC)"; \
+		exit 1; \
+	else \
+		echo ""; \
+		echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"; \
+		echo "$(GREEN)✓ All basestation overlay validations passed!$(NC)"; \
+		echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"; \
+	fi
+
+validate-client-overlays:
+	@echo ""
+	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@echo "$(YELLOW)Validating Client Overlay Application$(NC)"
+	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@DTS_FILE="client/build/client/zephyr/zephyr.dts"; \
+	if [ ! -f "$$DTS_FILE" ]; then \
+		echo "$(RED)✗ Compiled devicetree not found: $$DTS_FILE$(NC)"; \
+		echo "$(YELLOW)  Build may not have completed successfully$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "$(GREEN)✓ Client devicetree compiled: $$DTS_FILE$(NC)"; \
+	echo "$(YELLOW)Note: Client has no custom overlays defined$(NC)"; \
+	echo ""

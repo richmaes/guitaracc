@@ -5,13 +5,17 @@
 # 2. If tests pass, build firmware for target hardware
 # 3. Optionally flash to connected devices
 
-.PHONY: all test build flash clean help check-west
+.PHONY: all test build flash clean help check-west init-west
 .PHONY: test-basestation test-client test-integration
 .PHONY: build-basestation build-client
 .PHONY: flash-basestation flash-client
 
 # Default target: test then build
 all: test build
+
+# Nordic nRF Connect SDK configuration
+NCS_BASE := /opt/nordic/ncs
+NCS_VERSION := v3.2.1
 
 WEST_PYTHON := /opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12
 
@@ -20,6 +24,10 @@ GREEN := \033[0;32m
 YELLOW := \033[0;33m
 RED := \033[0;31m
 NC := \033[0m # No Color
+
+init-west:
+	@nrfutil sdk-manager toolchain launch --ncs-version $(NCS_VERSION) --shell
+	@source $(NCS_BASE)/$(NCS_VERSION)/zephyr/zephyr-env.sh
 
 # Check if west is available
 check-west:
@@ -39,7 +47,11 @@ check-west:
 	 echo "  1. Tests only (no west needed): make test" && \
 	 echo "  2. Tests only (no west needed): make verify" && \
 	 echo "" && \
-	 echo "$(YELLOW)Current SDK: nRF Connect SDK v3.1.1$(NC)" && \
+	 echo "$(YELLOW)Or manually initialize nRF Connect SDK:$(NC)" && \
+	 echo "  nrfutil sdk-manager toolchain launch --ncs-version $(NCS_VERSION) --shell" && \
+	 echo "  source $(NCS_BASE)/$(NCS_VERSION)/zephyr/zephyr-env.sh" && \
+	 echo "" && \
+	 echo "$(YELLOW)Current SDK: nRF Connect SDK $(NCS_VERSION)$(NC)" && \
 	 echo "$(YELLOW)Working directory: $(shell pwd)$(NC)" && \
 	 echo "" && \
 	 exit 1)

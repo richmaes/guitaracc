@@ -13,9 +13,9 @@ elseif(EXISTS "/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3
 endif()
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(guitaracc_client)
+project(NONE)
 
 target_sources(app PRIVATE
-	src/main.c
-	src/motion_logic.c
+        src/main.c
+        src/motion_logic.c
 )

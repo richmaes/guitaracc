@@ -80,7 +80,7 @@ Accelerometer (ADXL362)
 
 #### `int main(void)`
 **Purpose**: Application entry point and main control loop  
-**Theory**: Initializes all subsystems, starts BLE advertising, and enters infinite loop to monitor accelerometer and manage power states  
+**Theory**: Initializes all subsystems (LEDs, Bluetooth, accelerometer), starts BLE advertising, and enters infinite loop to monitor accelerometer and manage power states. LED initialization precedes Bluetooth setup to ensure visual feedback is available early in boot sequence  
 **Returns**: 0 (never reached due to infinite loop)
 
 #### `static void motion_timeout_handler(struct k_timer *timer)`
@@ -98,14 +98,14 @@ Accelerometer (ADXL362)
 
 #### `static void connected(struct bt_conn *conn, uint8_t err)`
 **Purpose**: Bluetooth connection established callback  
-**Theory**: Called by Zephyr BLE stack when basestation connects. Stops motion timer since device should stay active while connected  
+**Theory**: Called by Zephyr BLE stack when basestation connects. Stops motion timer since device should stay active while connected. Also turns on CON_STATUS_LED (LED2) to provide visual feedback of connection state  
 **Parameters**:
 - `conn`: BLE connection handle
 - `err`: Error code (0 = success)
 
 #### `static void disconnected(struct bt_conn *conn, uint8_t reason)`
 **Purpose**: Bluetooth disconnection callback  
-**Theory**: Called when connection to basestation is lost. Re-enables motion monitoring and resets notification state  
+**Theory**: Called when connection to basestation is lost. Re-enables motion monitoring and resets notification state. Turns off CON_STATUS_LED (LED2) to indicate disconnection  
 **Parameters**:
 - `conn`: BLE connection handle
 - `reason`: Disconnection reason code
@@ -162,6 +162,13 @@ struct accel_data {
 - **Update Rate**: Up to 10Hz when data changes
 
 ## Configuration Constants
+
+### LED Indicators
+```c
+#define RUN_STATUS_LED   DK_LED1   /* LED1: Running/advertising status */
+#define CON_STATUS_LED   DK_LED2   /* LED2: Connection status indicator */
+```
+**Theory**: Uses Nordic DK library for LED control on Thingy:53. CON_STATUS_LED provides visual feedback of BLE connection state - lit when connected to basestation, off when disconnected.
 
 ### Motion Detection
 ```c
@@ -251,6 +258,7 @@ RAM:   35768 bytes (7.0% of 512KB)
 ### Project Files
 - **CMakeLists.txt**: Zephyr build system configuration
 - **prj.conf**: Kernel and subsystem configuration
+- `CONFIG_DK_LIBRARY`: Enable Nordic DK library for LED and button support
 - **Kconfig**: Project-specific Kconfig options (if any)
 
 ### Key Kconfig Options

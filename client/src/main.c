@@ -23,6 +23,8 @@
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/gatt.h>
+
+#include <dk_buttons_and_leds.h>
 // COMMENTED OUT FOR TROUBLESHOOTING
 // #include <zephyr/device.h>
 // #include <zephyr/drivers/sensor.h>
@@ -39,6 +41,9 @@ LOG_MODULE_REGISTER(guitar, LOG_LEVEL_DBG);
 
 #define DEVICE_NAME     CONFIG_BT_DEVICE_NAME
 #define DEVICE_NAME_LEN (sizeof(DEVICE_NAME) - 1)
+
+#define RUN_STATUS_LED          DK_LED1
+#define CON_STATUS_LED          DK_LED2
 
 // COMMENTED OUT FOR TROUBLESHOOTING
 // #define ACCEL_ALIAS DT_ALIAS(accel0)
@@ -140,6 +145,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	} else {
 		LOG_INF("Connected");
 		is_connected = true;
+		dk_set_led_on(CON_STATUS_LED);
 		// COMMENTED OUT FOR TROUBLESHOOTING
 		// k_timer_stop(&motion_timer);
 	}
@@ -149,6 +155,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	LOG_INF("Disconnected (reason 0x%02x)", reason);
 	is_connected = false;
+	dk_set_led_off(CON_STATUS_LED);
 	// COMMENTED OUT FOR TROUBLESHOOTING
 	// accel_notify_enabled = false;
 	// k_timer_start(&motion_timer, K_MSEC(MOTION_TIMEOUT_MS), K_NO_WAIT);
@@ -321,6 +328,12 @@ int main(void)
 // 	k_timer_init(&motion_timer, motion_timeout_handler, NULL);
 
 	/* Register authentication callbacks */
+	err = dk_leds_init();
+	if (err) {
+		LOG_ERR("LEDs init failed (err %d)", err);
+		return 0;
+	}
+
 	if (IS_ENABLED(CONFIG_BT_SMP)) {
 		err = bt_conn_auth_cb_register(&conn_auth_callbacks);
 		if (err) {

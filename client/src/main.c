@@ -25,28 +25,19 @@
 #include <zephyr/bluetooth/gatt.h>
 
 #include <dk_buttons_and_leds.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 // COMMENTED OUT FOR TROUBLESHOOTING
-// #include <zephyr/device.h>
-// #include <zephyr/drivers/sensor.h>
 // #include <zephyr/pm/device.h>
-// #include <math.h>
-// #include "motion_logic.h"
+#include <math.h>
+#include "motion_logic.h"
 
 LOG_MODULE_REGISTER(guitar, LOG_LEVEL_DBG);
-
-/* ========== DATA STRUCTURES ========== */
-
-/* Acceleration data structure: X, Y, Z in milli-g */
-struct accel_data {
-	int16_t x;  /* X-axis in milli-g */
-	int16_t y;  /* Y-axis in milli-g */
-	int16_t z;  /* Z-axis in milli-g */
-} __attribute__((packed));
 
 /* ========== DEFINES ========== */
 
 /* Enable test mode to generate incrementing accelerometer data */
-#define TEST_MODE_ENABLED 1
+//#define TEST_MODE_ENABLED 1
 
 #define DEVICE_NAME     CONFIG_BT_DEVICE_NAME
 #define DEVICE_NAME_LEN (sizeof(DEVICE_NAME) - 1)
@@ -54,8 +45,8 @@ struct accel_data {
 #define RUN_STATUS_LED          DK_LED1
 #define CON_STATUS_LED          DK_LED2
 
+#define ACCEL_ALIAS DT_ALIAS(accel0)
 // COMMENTED OUT FOR TROUBLESHOOTING
-// #define ACCEL_ALIAS DT_ALIAS(accel0)
 // #define MOTION_TIMEOUT_MS 30000  /* 30 seconds of inactivity before sleep */
 
 /* Custom Guitar Service UUID: a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a3f */
@@ -68,11 +59,11 @@ struct accel_data {
 
 /* ========== STATIC VARIABLES ========== */
 
+#if !TEST_MODE_ENABLED
+static const struct device *accel_dev = DEVICE_DT_GET(ACCEL_ALIAS);
+#endif
+
 // COMMENTED OUT FOR TROUBLESHOOTING
-// #if !TEST_MODE_ENABLED
-// static const struct device *accel_dev = DEVICE_DT_GET(ACCEL_ALIAS);
-// #endif
-//
 // static struct k_timer motion_timer;
 // static bool is_sleeping = false;
 static bool is_connected = false;
@@ -280,11 +271,6 @@ BT_GATT_SERVICE_DEFINE(guitar_svc,
 
 /* ========== DATA SENDING FUNCTIONS ========== */
 
-static bool accel_data_changed(struct accel_data *curr, struct accel_data *prev)
-{
-	return (curr->x != prev->x || curr->y != prev->y || curr->z != prev->z);
-}
-
 static int send_accel_notification(struct bt_conn *conn)
 {
 	int err;
@@ -318,25 +304,24 @@ static int send_accel_notification(struct bt_conn *conn)
 int main(void)
 {
 	int err;
-	// COMMENTED OUT FOR TROUBLESHOOTING
-	// struct sensor_value accel[3];
+	struct sensor_value accel[3];
 
 	LOG_INF("BLE Peripheral starting (simplified for troubleshooting)...");
 
+#if TEST_MODE_ENABLED
+	LOG_INF("Running in TEST MODE - no accelerometer required");
+#else
+	/* Initialize accelerometer */
+	if (!device_is_ready(accel_dev)) {
+		LOG_ERR("Accelerometer device not ready");
+		return 0;
+	}
+	LOG_INF("Accelerometer initialized");
+#endif
+
 	// COMMENTED OUT FOR TROUBLESHOOTING
-// #if TEST_MODE_ENABLED
-// 	LOG_INF("Running in TEST MODE - no accelerometer required");
-// #else
-// 	/* Initialize accelerometer */
-// 	if (!device_is_ready(accel_dev)) {
-// 		LOG_ERR("Accelerometer device not ready");
-// 		return 0;
-// 	}
-// 	LOG_INF("Accelerometer initialized");
-// #endif
-//
-// 	/* Initialize motion timer */
-// 	k_timer_init(&motion_timer, motion_timeout_handler, NULL);
+	// /* Initialize motion timer */
+	// k_timer_init(&motion_timer, motion_timeout_handler, NULL);
 
 	/* Register authentication callbacks */
 	err = dk_leds_init();
@@ -406,8 +391,30 @@ int main(void)
 		
 		k_sleep(K_MSEC(100)); /* 10Hz update rate */
 #else
-		k_sleep(K_SECONDS(5));
-		LOG_DBG("Still alive, connected: %s", is_connected ? "yes" : "no");
+		/* Read accelerometer and send notifications */
+		err = sensor_sample_fetch(accel_dev);
+		if (err == 0) {
+			sensor_channel_get(accel_dev, SENSOR_CHAN_ACCEL_XYZ, accel);
+			
+			/* Get acceleration values in m/s² */
+			double x = sensor_value_to_double(&accel[0]);
+			double y = sensor_value_to_double(&accel[1]);
+			double z = sensor_value_to_double(&accel[2]);
+			
+			/* Convert to milli-g and store */
+			convert_accel_to_milli_g(x, y, z, &current_accel);
+			
+			/* Send notification if connected and enabled (only if data changed) */
+			if (is_connected) {
+				bt_conn_foreach(BT_CONN_TYPE_LE, 
+					       (void (*)(struct bt_conn *, void *))send_accel_notification,
+					       NULL);
+			}
+		} else {
+			LOG_ERR("Failed to fetch sensor sample (err %d)", err);
+		}
+		
+		k_sleep(K_MSEC(100)); /* 10Hz sample rate */
 #endif
 	}
 

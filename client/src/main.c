@@ -45,6 +45,8 @@ LOG_MODULE_REGISTER(guitar, LOG_LEVEL_DBG);
 #define RUN_STATUS_LED          DK_LED1
 #define CON_STATUS_LED          DK_LED2
 
+#define MOVEMENT_THRESHOLD_MILLI_G  50  /* Minimum change to transmit (0.05g) */
+
 #define ACCEL_ALIAS DT_ALIAS(accel0)
 // COMMENTED OUT FOR TROUBLESHOOTING
 // #define MOTION_TIMEOUT_MS 30000  /* 30 seconds of inactivity before sleep */
@@ -279,8 +281,8 @@ static int send_accel_notification(struct bt_conn *conn)
 		return 0;
 	}
 
-	/* Only send if data has changed (power optimization) */
-	if (!accel_data_changed(&current_accel, &previous_accel)) {
+	/* Only send if movement exceeds threshold (filter minor changes/noise) */
+	if (!detect_movement_threshold(&current_accel, &previous_accel, MOVEMENT_THRESHOLD_MILLI_G)) {
 		return 0;
 	}
 

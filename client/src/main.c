@@ -34,10 +34,19 @@
 
 LOG_MODULE_REGISTER(guitar, LOG_LEVEL_DBG);
 
+/* ========== DATA STRUCTURES ========== */
+
+/* Acceleration data structure: X, Y, Z in milli-g */
+struct accel_data {
+	int16_t x;  /* X-axis in milli-g */
+	int16_t y;  /* Y-axis in milli-g */
+	int16_t z;  /* Z-axis in milli-g */
+} __attribute__((packed));
+
 /* ========== DEFINES ========== */
 
 /* Enable test mode to generate incrementing accelerometer data */
-//#define TEST_MODE_ENABLED 1
+#define TEST_MODE_ENABLED 1
 
 #define DEVICE_NAME     CONFIG_BT_DEVICE_NAME
 #define DEVICE_NAME_LEN (sizeof(DEVICE_NAME) - 1)
@@ -48,14 +57,14 @@ LOG_MODULE_REGISTER(guitar, LOG_LEVEL_DBG);
 // COMMENTED OUT FOR TROUBLESHOOTING
 // #define ACCEL_ALIAS DT_ALIAS(accel0)
 // #define MOTION_TIMEOUT_MS 30000  /* 30 seconds of inactivity before sleep */
-//
-// /* Custom Guitar Service UUID: a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a3f */
-// #define BT_UUID_GUITAR_SERVICE_VAL \
-// 	BT_UUID_128_ENCODE(0xa7c8f9d2, 0x4b3e, 0x4a1d, 0x9f2c, 0x8e7d6c5b4a3f)
-//
-// /* Acceleration Data Characteristic UUID: a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a40 */
-// #define BT_UUID_GUITAR_ACCEL_CHAR_VAL \
-// 	BT_UUID_128_ENCODE(0xa7c8f9d2, 0x4b3e, 0x4a1d, 0x9f2c, 0x8e7d6c5b4a40)
+
+/* Custom Guitar Service UUID: a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a3f */
+#define BT_UUID_GUITAR_SERVICE_VAL \
+	BT_UUID_128_ENCODE(0xa7c8f9d2, 0x4b3e, 0x4a1d, 0x9f2c, 0x8e7d6c5b4a3f)
+
+/* Acceleration Data Characteristic UUID: a7c8f9d2-4b3e-4a1d-9f2c-8e7d6c5b4a40 */
+#define BT_UUID_GUITAR_ACCEL_CHAR_VAL \
+	BT_UUID_128_ENCODE(0xa7c8f9d2, 0x4b3e, 0x4a1d, 0x9f2c, 0x8e7d6c5b4a40)
 
 /* ========== STATIC VARIABLES ========== */
 
@@ -67,20 +76,20 @@ LOG_MODULE_REGISTER(guitar, LOG_LEVEL_DBG);
 // static struct k_timer motion_timer;
 // static bool is_sleeping = false;
 static bool is_connected = false;
-//
-// #if TEST_MODE_ENABLED
-// static int16_t test_counter = 0;
-// #endif
-//
-// static struct bt_uuid_128 guitar_service_uuid = BT_UUID_INIT_128(
-// 	BT_UUID_GUITAR_SERVICE_VAL);
-//
-// static struct bt_uuid_128 guitar_accel_char_uuid = BT_UUID_INIT_128(
-// 	BT_UUID_GUITAR_ACCEL_CHAR_VAL);
-//
-// static struct accel_data current_accel;
-// static struct accel_data previous_accel;
-// static bool accel_notify_enabled = false;
+
+#if TEST_MODE_ENABLED
+static int16_t test_counter = 0;
+#endif
+
+static struct bt_uuid_128 guitar_service_uuid = BT_UUID_INIT_128(
+	BT_UUID_GUITAR_SERVICE_VAL);
+
+static struct bt_uuid_128 guitar_accel_char_uuid = BT_UUID_INIT_128(
+	BT_UUID_GUITAR_ACCEL_CHAR_VAL);
+
+static struct accel_data current_accel;
+static struct accel_data previous_accel;
+static bool accel_notify_enabled = false;
 
 /* ========== ADVERTISING DATA ========== */
 #if CONFIG_BT_DIRECTED_ADVERTISING
@@ -93,11 +102,10 @@ K_MSGQ_DEFINE(bonds_queue,
 
 static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-	// COMMENTED OUT FOR TROUBLESHOOTING
-	// BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE,
-	//	      (CONFIG_BT_DEVICE_APPEARANCE >> 0) & 0xff,
-	//	      (CONFIG_BT_DEVICE_APPEARANCE >> 8) & 0xff),
-	// BT_DATA(BT_DATA_UUID128_ALL, guitar_service_uuid.val, sizeof(guitar_service_uuid.val)),
+	BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE,
+		      (CONFIG_BT_DEVICE_APPEARANCE >> 0) & 0xff,
+		      (CONFIG_BT_DEVICE_APPEARANCE >> 8) & 0xff),
+	BT_DATA(BT_DATA_UUID128_ALL, guitar_service_uuid.val, sizeof(guitar_service_uuid.val)),
 };
 
 static const struct bt_data sd[] = {
@@ -156,8 +164,8 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	LOG_INF("Disconnected (reason 0x%02x)", reason);
 	is_connected = false;
 	dk_set_led_off(CON_STATUS_LED);
+	accel_notify_enabled = false;
 	// COMMENTED OUT FOR TROUBLESHOOTING
-	// accel_notify_enabled = false;
 	// k_timer_start(&motion_timer, K_MSEC(MOTION_TIMEOUT_MS), K_NO_WAIT);
 }
 
@@ -251,56 +259,59 @@ static struct bt_conn_auth_info_cb conn_auth_info_callbacks;
 
 /* ========== GATT CALLBACKS ========== */
 
-// COMMENTED OUT FOR TROUBLESHOOTING
-// static void accel_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
-// {
-// 	accel_notify_enabled = (value == BT_GATT_CCC_NOTIFY);
-// 	LOG_INF("Acceleration notifications %s", accel_notify_enabled ? "enabled" : "disabled");
-// }
-//
-// /* ========== GATT SERVICE DEFINITION ========== */
-//
-// /* Guitar GATT Service Definition */
-// BT_GATT_SERVICE_DEFINE(guitar_svc,
-// 	BT_GATT_PRIMARY_SERVICE(&guitar_service_uuid),
-// 	BT_GATT_CHARACTERISTIC(&guitar_accel_char_uuid.uuid,
-// 			       BT_GATT_CHRC_NOTIFY,
-// 			       BT_GATT_PERM_NONE,
-// 			       NULL, NULL, NULL),
-// 	BT_GATT_CCC(accel_ccc_cfg_changed,
-// 		    BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
-// );
+static void accel_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
+{
+	accel_notify_enabled = (value == BT_GATT_CCC_NOTIFY);
+	LOG_INF("Acceleration notifications %s", accel_notify_enabled ? "enabled" : "disabled");
+}
+
+/* ========== GATT SERVICE DEFINITION ========== */
+
+/* Guitar GATT Service Definition */
+BT_GATT_SERVICE_DEFINE(guitar_svc,
+	BT_GATT_PRIMARY_SERVICE(&guitar_service_uuid),
+	BT_GATT_CHARACTERISTIC(&guitar_accel_char_uuid.uuid,
+			       BT_GATT_CHRC_NOTIFY,
+			       BT_GATT_PERM_NONE,
+			       NULL, NULL, NULL),
+	BT_GATT_CCC(accel_ccc_cfg_changed,
+		    BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
+);
 
 /* ========== DATA SENDING FUNCTIONS ========== */
 
-// COMMENTED OUT FOR TROUBLESHOOTING
-// static int send_accel_notification(struct bt_conn *conn)
-// {
-// 	int err;
-// 	
-// 	if (!accel_notify_enabled) {
-// 		return 0;
-// 	}
-//
-// 	/* Only send if data has changed (power optimization) */
-// 	if (!accel_data_changed(&current_accel, &previous_accel)) {
-// 		return 0;
-// 	}
-//
-// 	err = bt_gatt_notify(conn, &guitar_svc.attrs[1], &current_accel, sizeof(current_accel));
-// 	if (err) {
-// 		LOG_ERR("Failed to send notification (err %d)", err);
-// 		return err;
-// 	}
-//
-// 	/* Update previous values after successful send */
-// 	previous_accel = current_accel;
-// 	
-// 	LOG_DBG("Sent accel: X=%d, Y=%d, Z=%d milli-g", 
-// 		current_accel.x, current_accel.y, current_accel.z);
-//
-// 	return 0;
-// }
+static bool accel_data_changed(struct accel_data *curr, struct accel_data *prev)
+{
+	return (curr->x != prev->x || curr->y != prev->y || curr->z != prev->z);
+}
+
+static int send_accel_notification(struct bt_conn *conn)
+{
+	int err;
+	
+	if (!accel_notify_enabled) {
+		return 0;
+	}
+
+	/* Only send if data has changed (power optimization) */
+	if (!accel_data_changed(&current_accel, &previous_accel)) {
+		return 0;
+	}
+
+	err = bt_gatt_notify(conn, &guitar_svc.attrs[1], &current_accel, sizeof(current_accel));
+	if (err) {
+		LOG_ERR("Failed to send notification (err %d)", err);
+		return err;
+	}
+
+	/* Update previous values after successful send */
+	previous_accel = current_accel;
+	
+	LOG_DBG("Sent accel: X=%d, Y=%d, Z=%d milli-g", 
+		current_accel.x, current_accel.y, current_accel.z);
+
+	return 0;
+}
 
 /* ========== MAIN FUNCTION ========== */
 
@@ -372,11 +383,32 @@ int main(void)
 	// COMMENTED OUT FOR TROUBLESHOOTING
 	// k_timer_start(&motion_timer, K_MSEC(MOTION_TIMEOUT_MS), K_NO_WAIT);
 
-	/* Main loop: Simple idle loop for BLE peripheral */
-	LOG_INF("Entering main loop...");
+	/* Main loop: Generate test data and send notifications */
+	LOG_INF("Entering main loop (TEST_MODE enabled)...");
 	while (1) {
+#if TEST_MODE_ENABLED
+		/* Generate synthetic incrementing test data */
+		current_accel.x = test_counter;
+		current_accel.y = test_counter + 100;
+		current_accel.z = test_counter + 200;
+		
+		test_counter += 10;
+		if (test_counter > 1000) {
+			test_counter = 0;
+		}
+		
+		/* Send notification if connected and enabled */
+		if (is_connected) {
+			bt_conn_foreach(BT_CONN_TYPE_LE, 
+				       (void (*)(struct bt_conn *, void *))send_accel_notification,
+				       NULL);
+		}
+		
+		k_sleep(K_MSEC(100)); /* 10Hz update rate */
+#else
 		k_sleep(K_SECONDS(5));
 		LOG_DBG("Still alive, connected: %s", is_connected ? "yes" : "no");
+#endif
 	}
 
 	return 0;

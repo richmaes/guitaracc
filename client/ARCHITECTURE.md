@@ -183,6 +183,19 @@ struct accel_data {
 
 **Theory**: 10Hz is sufficient for guitar motion capture while keeping BLE bandwidth reasonable. Sleep mode uses 2Hz to minimize power while still detecting wake events.
 
+### Hardware Interrupt Configuration
+
+The ADXL362 accelerometer is configured for hardware interrupt-driven wake-on-motion:
+
+```properties
+CONFIG_ADXL362_INTERRUPT_MODE=1         # Use INT1 pin for motion interrupts
+CONFIG_ADXL362_ACTIVITY_THRESHOLD=500   # 500mg = 0.5g motion threshold
+CONFIG_ADXL362_INACTIVITY_TIME=5        # 5 samples at ODR for inactivity detection
+CONFIG_GPIO=y                           # GPIO subsystem for interrupt handling
+```
+
+**Theory**: Hardware activity detection allows the nRF5340 CPU to enter deep sleep (<10µA) instead of polling mode (100-500µA). The ADXL362 monitors acceleration internally and triggers a GPIO interrupt on its INT1 pin when movement exceeds the configured threshold, waking the CPU with <1ms latency.
+
 **Note**: For detailed accelerometer wake-on-motion configuration including hardware interrupt support, see **[ACCELEROMETER.md](ACCELEROMETER.md)**.
 
 ## Test Mode
@@ -246,12 +259,13 @@ RAM:   35768 bytes (7.0% of 512KB)
 
 ## Known Issues and TODOs
 
-1. **TEST_MODE_ENABLED is active** - Must be disabled for production
-2. **No unit tests** - Motion detection logic should be extracted and tested
-3. **Motion thresholds untested** - 0.5 m/s² and 30s timeout need validation with real guitar usage
-4. **Power management untested** - Sleep/wake transitions need hardware validation
+1. ✅ ~~**TEST_MODE_ENABLED is active**~~ - **COMPLETED**: Disabled (commented out on line 40 of main.c), using real accelerometer data
+2. ✅ ~~**No unit tests**~~ - **COMPLETED**: 35 comprehensive unit tests implemented in [test/test_motion.c](test/test_motion.c) covering conversion functions, magnitude calculations, motion detection, and movement threshold filtering. All tests passing (`make test` exit code 0)
+3. **Motion thresholds need real-world validation** - 50 milli-g (0.05g) movement threshold for BLE transmission validated in testing logs showing motion range -718 to +938 milli-g during movement. Still needs testing with actual guitar playing. 30s inactivity timeout needs field validation
+4. **Power management untested** - Sleep/wake transitions code exists but is commented out, needs hardware validation
 5. **No voltage monitoring** - Consider adding battery level characteristic for user feedback
-6. **Software polling for wake** - Not using ADXL362 hardware interrupt capabilities, limiting power savings. Should implement interrupt-driven wake-on-motion (see [ACCELEROMETER.md](ACCELEROMETER.md))
+6. **⚠️ Hardware activity interrupts not functional** - GPIO interrupt handler code is implemented and INT1 pin (GPIO0.19) is properly configured, but interrupts never fire. **Root cause**: Zephyr's ADXL362 driver (v3.2.1) uses `CONFIG_ADXL362_INTERRUPT_MODE=1` for data-ready interrupts only, not activity detection. The driver does not configure ADXL362 hardware registers (INTMAP1, ACT_INACT_CTL) needed for motion-triggered interrupts. **Solution required**: Custom driver modification to write activity detection configuration to ADXL362 registers. Current polling approach (10Hz sampling) works well for guitar motion capture. Hardware interrupts would enable deep sleep mode with <10µA consumption vs current ~500µA active sampling.
+7. **⚠️ RTT debug logging enabled** - SEGGER RTT enabled for development debugging (CONFIG_USE_SEGGER_RTT=y, CONFIG_LOG_BACKEND_RTT=y). **Must disable before production shipment** to improve performance and reduce attack surface. Set CONFIG_LOG=n or at minimum disable RTT backend before release.
 
 ## Build Configuration
 

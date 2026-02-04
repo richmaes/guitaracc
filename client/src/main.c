@@ -70,6 +70,11 @@ static const struct device *accel_dev = DEVICE_DT_GET(ACCEL_ALIAS);
 // static bool is_sleeping = false;
 static bool is_connected = false;
 
+#if !TEST_MODE_ENABLED
+/* GPIO interrupt for accelerometer motion detection */
+static struct gpio_callback accel_cb_data;
+#endif
+
 #if TEST_MODE_ENABLED
 static int16_t test_counter = 0;
 #endif
@@ -136,6 +141,19 @@ static const struct bt_data sd[] = {
 // 	/* Reset inactivity timer */
 // 	k_timer_start(&motion_timer, K_MSEC(MOTION_TIMEOUT_MS), K_NO_WAIT);
 // }
+
+/* ========== ACCELEROMETER INTERRUPT ========== */
+
+#if !TEST_MODE_ENABLED
+static void accel_gpio_handler(const struct device *dev,
+                               struct gpio_callback *cb,
+                               uint32_t pins)
+{
+	LOG_INF("*** MOTION INTERRUPT DETECTED *** (GPIO pins: 0x%08x)", pins);
+	/* TODO: When sleep mode is implemented, call wake_from_motion() here */
+	// wake_from_motion();
+}
+#endif
 
 /* ========== CONNECTION CALLBACKS ========== */
 
@@ -319,6 +337,35 @@ int main(void)
 		return 0;
 	}
 	LOG_INF("Accelerometer initialized");
+
+	/* Configure GPIO interrupt for ADXL362 INT1 pin */
+	const struct gpio_dt_spec int1_gpio = GPIO_DT_SPEC_GET_BY_IDX(DT_ALIAS(accel0), int1_gpios, 0);
+	
+	if (!gpio_is_ready_dt(&int1_gpio)) {
+		LOG_ERR("INT1 GPIO not ready");
+		return 0;
+	}
+	
+	err = gpio_pin_configure_dt(&int1_gpio, GPIO_INPUT);
+	if (err) {
+		LOG_ERR("Failed to configure INT1 as input (err %d)", err);
+		return 0;
+	}
+	
+	err = gpio_pin_interrupt_configure_dt(&int1_gpio, GPIO_INT_EDGE_RISING);
+	if (err) {
+		LOG_ERR("Failed to configure interrupt (err %d)", err);
+		return 0;
+	}
+	
+	gpio_init_callback(&accel_cb_data, accel_gpio_handler, BIT(int1_gpio.pin));
+	err = gpio_add_callback(int1_gpio.port, &accel_cb_data);
+	if (err) {
+		LOG_ERR("Failed to add callback (err %d)", err);
+		return 0;
+	}
+	
+	LOG_INF("ADXL362 motion interrupt enabled on GPIO0.%d (threshold: 500mg)", int1_gpio.pin);
 #endif
 
 	// COMMENTED OUT FOR TROUBLESHOOTING

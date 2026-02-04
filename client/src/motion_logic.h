@@ -81,4 +81,20 @@ bool detect_motion(double x, double y, double z);
  */
 bool accel_data_changed(const struct accel_data *current, const struct accel_data *previous);
 
+/**
+ * @brief Detect movement exceeding threshold
+ * 
+ * Checks if acceleration has changed by more than the specified threshold
+ * on any axis. Useful for detecting significant motion while filtering out
+ * noise and minor vibrations.
+ * 
+ * @param current Current acceleration data in milli-g
+ * @param previous Previous acceleration data in milli-g
+ * @param threshold_milli_g Minimum change in milli-g to detect (e.g., 50 for 0.05g)
+ * @return true if any axis changed by more than threshold, false otherwise
+ */
+bool detect_movement_threshold(const struct accel_data *current,
+                                const struct accel_data *previous,
+                                int16_t threshold_milli_g);
+
 #endif /* MOTION_LOGIC_H */

@@ -65,3 +65,27 @@ bool accel_data_changed(const struct accel_data *current, const struct accel_dat
 		current->y != previous->y ||
 		current->z != previous->z);
 }
+
+bool detect_movement_threshold(const struct accel_data *current,
+                                const struct accel_data *previous,
+                                int16_t threshold_milli_g)
+{
+	if (current == NULL || previous == NULL) {
+		return false;
+	}
+	
+	/* Calculate absolute differences for each axis */
+	int16_t dx = current->x - previous->x;
+	int16_t dy = current->y - previous->y;
+	int16_t dz = current->z - previous->z;
+	
+	/* Make absolute (handle negative values) */
+	if (dx < 0) dx = -dx;
+	if (dy < 0) dy = -dy;
+	if (dz < 0) dz = -dz;
+	
+	/* Check if any axis exceeded threshold */
+	return (dx > threshold_milli_g || 
+	        dy > threshold_milli_g || 
+	        dz > threshold_milli_g);
+}

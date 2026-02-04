@@ -322,6 +322,119 @@ void test_detect_motion_at_threshold(void)
 	PASS();
 }
 
+/* ========== Movement Threshold Tests ========== */
+
+/* Test: No movement - identical values */
+void test_movement_threshold_no_change(void)
+{
+	TEST("movement_threshold_no_change");
+	struct accel_data current = { .x = 100, .y = 200, .z = 1000 };
+	struct accel_data previous = { .x = 100, .y = 200, .z = 1000 };
+	
+	bool moved = detect_movement_threshold(&current, &previous, 50);
+	ASSERT_FALSE(moved);
+	PASS();
+}
+
+/* Test: Change below threshold */
+void test_movement_threshold_below_threshold(void)
+{
+	TEST("movement_threshold_below_threshold");
+	struct accel_data current = { .x = 105, .y = 202, .z = 1003 };
+	struct accel_data previous = { .x = 100, .y = 200, .z = 1000 };
+	
+	bool moved = detect_movement_threshold(&current, &previous, 50);
+	ASSERT_FALSE(moved);  /* All changes < 50 */
+	PASS();
+}
+
+/* Test: Change exactly at threshold (should not trigger) */
+void test_movement_threshold_at_threshold(void)
+{
+	TEST("movement_threshold_at_threshold");
+	struct accel_data current = { .x = 150, .y = 200, .z = 1000 };
+	struct accel_data previous = { .x = 100, .y = 200, .z = 1000 };
+	
+	bool moved = detect_movement_threshold(&current, &previous, 50);
+	ASSERT_FALSE(moved);  /* X changed by exactly 50, should not trigger (> not >=) */
+	PASS();
+}
+
+/* Test: X-axis exceeds threshold */
+void test_movement_threshold_above_threshold_x(void)
+{
+	TEST("movement_threshold_above_threshold_x");
+	struct accel_data current = { .x = 151, .y = 200, .z = 1000 };
+	struct accel_data previous = { .x = 100, .y = 200, .z = 1000 };
+	
+	bool moved = detect_movement_threshold(&current, &previous, 50);
+	ASSERT_TRUE(moved);  /* X changed by 51 > 50 */
+	PASS();
+}
+
+/* Test: Y-axis exceeds threshold */
+void test_movement_threshold_above_threshold_y(void)
+{
+	TEST("movement_threshold_above_threshold_y");
+	struct accel_data current = { .x = 100, .y = 260, .z = 1000 };
+	struct accel_data previous = { .x = 100, .y = 200, .z = 1000 };
+	
+	bool moved = detect_movement_threshold(&current, &previous, 50);
+	ASSERT_TRUE(moved);  /* Y changed by 60 > 50 */
+	PASS();
+}
+
+/* Test: Z-axis exceeds threshold */
+void test_movement_threshold_above_threshold_z(void)
+{
+	TEST("movement_threshold_above_threshold_z");
+	struct accel_data current = { .x = 100, .y = 200, .z = 900 };
+	struct accel_data previous = { .x = 100, .y = 200, .z = 1000 };
+	
+	bool moved = detect_movement_threshold(&current, &previous, 50);
+	ASSERT_TRUE(moved);  /* Z changed by 100 > 50 */
+	PASS();
+}
+
+/* Test: Multiple axes change, one exceeds threshold */
+void test_movement_threshold_multiple_axes(void)
+{
+	TEST("movement_threshold_multiple_axes");
+	struct accel_data current = { .x = 120, .y = 230, .z = 1100 };
+	struct accel_data previous = { .x = 100, .y = 200, .z = 1000 };
+	
+	bool moved = detect_movement_threshold(&current, &previous, 50);
+	ASSERT_TRUE(moved);  /* Z changed by 100 > 50 */
+	PASS();
+}
+
+/* Test: Negative change detection */
+void test_movement_threshold_negative_change(void)
+{
+	TEST("movement_threshold_negative_change");
+	struct accel_data current = { .x = 100, .y = 200, .z = 1000 };
+	struct accel_data previous = { .x = 180, .y = 200, .z = 1000 };
+	
+	bool moved = detect_movement_threshold(&current, &previous, 50);
+	ASSERT_TRUE(moved);  /* X decreased by 80, absolute value > 50 */
+	PASS();
+}
+
+/* Test: Null pointer safety */
+void test_movement_threshold_null_safety(void)
+{
+	TEST("movement_threshold_null_safety");
+	struct accel_data current = { .x = 100, .y = 200, .z = 1000 };
+	
+	bool moved1 = detect_movement_threshold(NULL, &current, 50);
+	ASSERT_FALSE(moved1);
+	
+	bool moved2 = detect_movement_threshold(&current, NULL, 50);
+	ASSERT_FALSE(moved2);
+	
+	PASS();
+}
+
 int main(void)
 {
 	printf("=== Motion Logic Unit Tests ===\n\n");
@@ -359,6 +472,17 @@ int main(void)
 	test_accel_data_changed_all();
 	test_accel_data_changed_null_current();
 	test_accel_data_changed_null_previous();
+	
+	/* Movement threshold tests */
+	test_movement_threshold_no_change();
+	test_movement_threshold_below_threshold();
+	test_movement_threshold_at_threshold();
+	test_movement_threshold_above_threshold_x();
+	test_movement_threshold_above_threshold_y();
+	test_movement_threshold_above_threshold_z();
+	test_movement_threshold_multiple_axes();
+	test_movement_threshold_negative_change();
+	test_movement_threshold_null_safety();
 	
 	printf("\n=== Test Summary ===\n");
 	printf("Passed: %d/%d\n", tests_passed, tests_total);

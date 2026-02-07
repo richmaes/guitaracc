@@ -95,6 +95,28 @@ The GuitarAcc system consists of two main applications:
 - **Control**: `USE_VCOM_BAUD` define in main.c
 - **Device Tree**: Pin configuration overridden in app.overlay
 
+#### Interrupt-Driven UART Implementation
+The UART uses **interrupt-driven transmission** for non-blocking MIDI output:
+
+- **Circular TX Queue**: 256-byte buffer for pending MIDI messages
+- **ISR Handler**: `uart_isr()` automatically sends queued bytes when FIFO is ready
+- **Non-blocking**: `queue_midi_bytes()` returns immediately after queuing data
+- **RX Disabled**: Only TX interrupts enabled (MIDI output only)
+
+**Important Notes:**
+- nRF UART driver does **not** support `uart_configure()` (returns -ENOSYS)
+- Baud rate **must** be configured in device tree (`current-speed` property in app.overlay)
+- Change `current-speed = <115200>` to `<31250>` for production MIDI output
+- ISR fills hardware FIFO (typically 16+ bytes) automatically
+- Main code continues execution while UART transmits in background
+
+**Queue Operation:**
+1. Application calls `queue_midi_bytes(data, len)` with MIDI message
+2. Bytes added to circular buffer (`midi_tx_queue[]`)
+3. TX interrupt enabled via `uart_irq_tx_enable()`
+4. ISR fires when FIFO ready, sends one byte at a time
+5. When queue empty, ISR disables TX interrupt
+
 ### Bluetooth Configuration
 - **Role**: Central (scans and connects to guitars)
 - **Max Connections**: 4 guitars simultaneously

@@ -68,6 +68,11 @@ struct guitar_connection {
 
 static struct guitar_connection guitar_conn = {0};
 
+/* Accelerometer to MIDI mapping configurations */
+static struct accel_mapping_config x_axis_config;
+static struct accel_mapping_config y_axis_config;
+static struct accel_mapping_config z_axis_config;
+
 /* UART ISR for interrupt-driven MIDI transmission */
 static void uart_isr(const struct device *dev, void *user_data)
 {
@@ -152,11 +157,11 @@ static void process_accel_data(const struct accel_data *accel, int guitar_id)
 {
 	uint8_t cc_x, cc_y, cc_z;
 	
-	/* Convert acceleration to MIDI CC values using shared logic */
-	/* NULL config uses default mapping (-2000mg to +2000mg) */
-	cc_x = accel_to_midi_cc(accel->x, NULL);
-	cc_y = accel_to_midi_cc(accel->y, NULL);
-	cc_z = accel_to_midi_cc(accel->z, NULL);
+	/* Convert acceleration to MIDI CC values using custom mappings */
+	/* X: -1027mg to -431mg, Y: -796mg to 111mg, Z: 61mg to -827mg (inverted) */
+	cc_x = accel_to_midi_cc(accel->x, &x_axis_config);
+	cc_y = accel_to_midi_cc(accel->y, &y_axis_config);
+	cc_z = accel_to_midi_cc(accel->z, &z_axis_config);
 	
 	/* Send MIDI CC messages on channel 1 */
 	send_midi_cc(0, MIDI_CC_X_AXIS, cc_x);  /* Channel 1, CC 16 */
@@ -913,6 +918,13 @@ int main(void)
 	uart_irq_rx_disable(midi_uart);
 	
 	LOG_INF("MIDI UART initialized (interrupt-driven)");
+
+	/* Initialize accelerometer to MIDI mapping configurations */
+	/* Based on captured data: X[-1027:-431], Y[-796:111], Z[61:-827] */
+	accel_mapping_init_linear(&x_axis_config, -1027, -431);
+	accel_mapping_init_linear(&y_axis_config, -796, 111);
+	accel_mapping_init_linear(&z_axis_config, 61, -827);
+	LOG_INF("Accel mapping: X[-1027:-431] Y[-796:111] Z[61:-827] -> MIDI[0:127]");
 
 	bt_hogp_init(&hogp, &hogp_init_params);
 

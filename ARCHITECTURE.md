@@ -22,6 +22,7 @@ Client 4 (Thingy:53) ──┘
   - Receives acceleration data from connected clients
   - Converts motion data to MIDI commands
   - Outputs MIDI stream via UART at 31.25 kbaud
+  - Provides RGB LED visual feedback for system state
 
 **→ See [basestation/ARCHITECTURE.md](basestation/ARCHITECTURE.md) for detailed implementation**
 

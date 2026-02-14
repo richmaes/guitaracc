@@ -278,6 +278,59 @@ The system uses a configurable abstraction layer to translate accelerometer data
 3. **Flash**: Use nRF Connect extension "Flash" button
 4. **Monitor**: VCOM0 at 115200 baud (test mode)
 
+## User Interface (UI)
+
+### RGB LED Status Indicators
+
+The basestation uses the onboard RGB LED (LED1) on the nRF5340 Audio DK to provide visual feedback for system state and connection status.
+
+#### LED Color Mapping
+
+| State | Color | Pattern | Meaning |
+|-------|-------|---------|---------|
+| **Initialization** | Yellow | Solid | System starting up |
+| **Scanning** | Blue | Slow Blink (1Hz) | BLE scanning for clients |
+| **1 Client Connected** | Green | Solid | One guitar connected |
+| **2 Clients Connected** | Cyan | Solid | Two guitars connected |
+| **3 Clients Connected** | Cyan | Slow Blink (1Hz) | Three guitars connected |
+| **4 Clients Connected** | White | Solid | Four guitars connected (max) |
+| **MIDI Active** | White | Brief Flash | MIDI data being transmitted |
+| **Error** | Red | Fast Blink (4Hz) | System error state |
+
+#### Implementation
+
+- **Module**: `ui_led.c` / `ui_led.h`
+- **Hardware**: RGB LED1 (led0, led1, led2 aliases in device tree)
+- **GPIO Control**: Three separate GPIO pins for Red, Green, Blue channels
+- **Update Rate**: LED patterns run in dedicated thread at appropriate intervals
+- **Thread Priority**: 7 (low priority, non-critical)
+
+#### API Functions
+
+```c
+int ui_led_init(void);                              // Initialize LED subsystem
+void ui_led_set_state(ui_state_t state);            // Set system state
+void ui_led_update_connection_count(uint8_t count); // Update based on connections
+void ui_led_flash(ui_led_color_t color, uint32_t duration_ms); // Brief flash
+```
+
+#### Usage Example
+
+```c
+// During initialization
+ui_led_init();
+ui_led_set_state(UI_STATE_INIT);
+
+// When scanning starts
+ui_led_set_state(UI_STATE_SCANNING);
+
+// When clients connect
+ui_led_update_connection_count(num_connected);
+
+// When sending MIDI
+ui_led_flash(UI_LED_WHITE, 50); // 50ms flash
+```
+
 ## Future Enhancements
 
 - [ ] Define accelerometer → MIDI mapping algorithm
@@ -285,4 +338,4 @@ The system uses a configurable abstraction layer to translate accelerometer data
 - [ ] Implement pitch bend and mod wheel from motion
 - [ ] Add wireless DFU support
 - [ ] Battery monitoring for Thingy:53
-- [ ] LED status indicators
+- [x] LED status indicators

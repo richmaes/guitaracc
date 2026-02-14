@@ -18,6 +18,7 @@
 #include <zephyr/settings/settings.h>
 #include <zephyr/drivers/uart.h>
 #include "midi_logic.h"
+#include "ui_led.h"
 
 LOG_MODULE_REGISTER(basestation, LOG_LEVEL_DBG);
 
@@ -167,6 +168,9 @@ static void process_accel_data(const struct accel_data *accel, int guitar_id)
 	send_midi_cc(0, MIDI_CC_X_AXIS, cc_x);  /* Channel 1, CC 16 */
 	send_midi_cc(0, MIDI_CC_Y_AXIS, cc_y);  /* Channel 1, CC 17 */
 	send_midi_cc(0, MIDI_CC_Z_AXIS, cc_z);  /* Channel 1, CC 18 */
+	
+	/* Brief LED flash to indicate MIDI activity */
+	ui_led_flash(UI_LED_WHITE, 30);  /* 30ms white flash */
 	
 #if BLE_DEBUG
 	LOG_INF("Accel: x=%d y=%d z=%d -> MIDI: %d %d %d", 
@@ -445,6 +449,10 @@ static void connected(struct bt_conn *conn, uint8_t conn_err)
 	/* Track guitar connection */
 	guitar_conn.conn = bt_conn_ref(conn);
 	guitar_conn.subscribed = false;
+	
+	/* Update LED to show connected state */
+	ui_led_update_connection_count(1);
+	
 #if BLE_DEBUG
 	LOG_INF("BLE: Guitar connected");
 #endif
@@ -478,6 +486,10 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 			bt_conn_unref(guitar_conn.conn);
 		guitar_conn.conn = NULL;
 		guitar_conn.subscribed = false;
+		
+		/* Update LED to show disconnected/scanning state */
+		ui_led_update_connection_count(0);
+		
 #if BLE_DEBUG
 		LOG_INF("BLE: Guitar disconnected");
 #endif
@@ -904,6 +916,13 @@ int main(void)
 
 	printk("Starting Bluetooth Central HIDS sample\n");
 
+	/* Initialize UI LED subsystem */
+	err = ui_led_init();
+	if (err) {
+		printk("Failed to initialize UI LED (err %d)\n", err);
+		/* Continue anyway - LED is not critical */
+	}
+
 	/* Initialize MIDI UART */
 	midi_uart = DEVICE_DT_GET(DT_NODELABEL(uart0));
 	if (!device_is_ready(midi_uart)) {
@@ -966,10 +985,14 @@ int main(void)
 	err = bt_scan_start(BT_SCAN_TYPE_SCAN_ACTIVE);
 	if (err) {
 		printk("Scanning failed to start (err %d)\n", err);
+		ui_led_set_state(UI_STATE_ERROR);
 		return 0;
 	}
 
 	printk("Scanning successfully started\n");
+	
+	/* Set LED to scanning state */
+	ui_led_set_state(UI_STATE_SCANNING);
 
 	return 0;
 }

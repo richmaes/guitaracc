@@ -80,22 +80,23 @@ static void test_accel_to_midi_conversion(void)
 	printf("\nTest: Accelerometer to MIDI CC Conversion\n");
 	print_separator('-', 60);
 	
+	/* Test with default mapping (NULL config uses -2000 to +2000mg) */
 	/* Test boundary values */
-	assert_equal_uint8("Zero acceleration (0g)", 63, accel_to_midi_cc(0));
-	assert_equal_uint8("Max positive (+2000mg)", 127, accel_to_midi_cc(2000));
-	assert_equal_uint8("Max negative (-2000mg)", 0, accel_to_midi_cc(-2000));
+	assert_equal_uint8("Zero acceleration (0g)", 63, accel_to_midi_cc(0, NULL));
+	assert_equal_uint8("Max positive (+2000mg)", 127, accel_to_midi_cc(2000, NULL));
+	assert_equal_uint8("Max negative (-2000mg)", 0, accel_to_midi_cc(-2000, NULL));
 	
 	/* Test clamping */
-	assert_equal_uint8("Over-range positive (3000mg)", 127, accel_to_midi_cc(3000));
-	assert_equal_uint8("Over-range negative (-3000mg)", 0, accel_to_midi_cc(-3000));
+	assert_equal_uint8("Over-range positive (3000mg)", 127, accel_to_midi_cc(3000, NULL));
+	assert_equal_uint8("Over-range negative (-3000mg)", 0, accel_to_midi_cc(-3000, NULL));
 	
 	/* Test mid-range values */
-	assert_equal_uint8("+1g (1000mg)", 95, accel_to_midi_cc(1000));
-	assert_equal_uint8("-1g (-1000mg)", 31, accel_to_midi_cc(-1000));
+	assert_equal_uint8("+1g (1000mg)", 95, accel_to_midi_cc(1000, NULL));
+	assert_equal_uint8("-1g (-1000mg)", 31, accel_to_midi_cc(-1000, NULL));
 	
 	/* Test quarter values */
-	assert_equal_uint8("+0.5g (500mg)", 79, accel_to_midi_cc(500));
-	assert_equal_uint8("-0.5g (-500mg)", 47, accel_to_midi_cc(-500));
+	assert_equal_uint8("+0.5g (500mg)", 79, accel_to_midi_cc(500, NULL));
+	assert_equal_uint8("-0.5g (-500mg)", 47, accel_to_midi_cc(-500, NULL));
 }
 
 static void test_midi_message_construction(void)
@@ -149,9 +150,9 @@ static void test_complete_accel_to_midi_flow(void)
 	};
 	
 	for (int i = 0; i < 5; i++) {
-		uint8_t cc_x = accel_to_midi_cc(test_cases[i].x);
-		uint8_t cc_y = accel_to_midi_cc(test_cases[i].y);
-		uint8_t cc_z = accel_to_midi_cc(test_cases[i].z);
+		uint8_t cc_x = accel_to_midi_cc(test_cases[i].x, NULL);
+		uint8_t cc_y = accel_to_midi_cc(test_cases[i].y, NULL);
+		uint8_t cc_z = accel_to_midi_cc(test_cases[i].z, NULL);
 		
 		uint8_t msg_x[3], msg_y[3], msg_z[3];
 		construct_midi_cc_msg(0, MIDI_CC_X_AXIS, cc_x, msg_x);

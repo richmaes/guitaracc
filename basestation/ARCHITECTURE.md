@@ -3,6 +3,7 @@
 ## Documentation
 
 - **[REFACTORING.md](REFACTORING.md)** - Code organization and host-based testing framework
+- **[MAPPING.md](MAPPING.md)** - Accelerometer to MIDI value mapping abstraction layer
 
 ## Hardware Platform
 
@@ -258,7 +259,11 @@ Both applications use:
 ## Communication Protocol
 
 ### BLE → MIDI Mapping
-TBD: Define how accelerometer data is translated to MIDI messages
+The system uses a configurable abstraction layer to translate accelerometer data to MIDI values. See **[MAPPING.md](MAPPING.md)** for detailed information on:
+- Linear mapping configuration
+- Custom range setup
+- API usage examples
+- Testing framework
 
 ### MIDI Output Format
 - **Protocol**: MIDI 1.0

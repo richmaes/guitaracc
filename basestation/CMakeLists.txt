@@ -18,4 +18,5 @@ project(guitaracc_basestation)
 target_sources(app PRIVATE 
     src/main.c
     src/midi_logic.c
+    src/accel_mapping.c
 )

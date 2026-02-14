@@ -10,6 +10,7 @@
 #define MIDI_LOGIC_H
 
 #include <stdint.h>
+#include "accel_mapping.h"
 
 /* MIDI Continuous Controller numbers */
 #define MIDI_CC_X_AXIS 16  /* General Purpose Controller 1 */
@@ -25,11 +26,21 @@ struct accel_data {
 
 /**
  * Convert milli-g value to MIDI CC value (0-127)
+ * Uses the configured mapping to translate accelerometer data.
  * 
- * @param milli_g Acceleration in milli-g (±2000 range)
+ * @param milli_g Acceleration in milli-g
+ * @param config Mapping configuration (if NULL, uses default mapping)
  * @return MIDI CC value (0-127), clamped to valid range
  */
-uint8_t accel_to_midi_cc(int16_t milli_g);
+uint8_t accel_to_midi_cc(int16_t milli_g, const struct accel_mapping_config *config);
+
+/**
+ * Get the default accelerometer mapping configuration
+ * Default maps -2000mg to 0 and +2000mg to 127 (±2g range)
+ * 
+ * @return Pointer to default configuration (static, read-only)
+ */
+const struct accel_mapping_config *get_default_accel_mapping(void);
 
 /**
  * Construct a MIDI Control Change message

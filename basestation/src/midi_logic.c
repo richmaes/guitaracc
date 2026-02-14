@@ -7,20 +7,28 @@
  */
 
 #include "midi_logic.h"
+#include "accel_mapping.h"
+#include <stddef.h>
 
-uint8_t accel_to_midi_cc(int16_t milli_g)
+/* Default mapping configuration: ±2g range */
+static struct accel_mapping_config default_mapping = {
+	.accel_min = -2000,  /* -2000mg maps to MIDI 0 */
+	.accel_max = 2000    /* +2000mg maps to MIDI 127 */
+};
+
+const struct accel_mapping_config *get_default_accel_mapping(void)
 {
-	/* Input range: approximately -2000 to +2000 milli-g (±2g)
-	 * Output range: 0 to 127 (MIDI CC value)
-	 * Map -2000 -> 0, 0 -> 64, +2000 -> 127
-	 */
-	int32_t value = ((int32_t)milli_g + 2000) * 127 / 4000;
+	return &default_mapping;
+}
+
+uint8_t accel_to_midi_cc(int16_t milli_g, const struct accel_mapping_config *config)
+{
+	/* Use default mapping if none provided */
+	if (config == NULL) {
+		config = &default_mapping;
+	}
 	
-	/* Clamp to valid MIDI CC range */
-	if (value < 0) value = 0;
-	if (value > 127) value = 127;
-	
-	return (uint8_t)value;
+	return accel_map_to_midi(config, milli_g);
 }
 
 void construct_midi_cc_msg(uint8_t channel, uint8_t cc_number, uint8_t value, uint8_t *msg_out)

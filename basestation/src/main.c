@@ -153,9 +153,10 @@ static void process_accel_data(const struct accel_data *accel, int guitar_id)
 	uint8_t cc_x, cc_y, cc_z;
 	
 	/* Convert acceleration to MIDI CC values using shared logic */
-	cc_x = accel_to_midi_cc(accel->x);
-	cc_y = accel_to_midi_cc(accel->y);
-	cc_z = accel_to_midi_cc(accel->z);
+	/* NULL config uses default mapping (-2000mg to +2000mg) */
+	cc_x = accel_to_midi_cc(accel->x, NULL);
+	cc_y = accel_to_midi_cc(accel->y, NULL);
+	cc_z = accel_to_midi_cc(accel->z, NULL);
 	
 	/* Send MIDI CC messages on channel 1 */
 	send_midi_cc(0, MIDI_CC_X_AXIS, cc_x);  /* Channel 1, CC 16 */

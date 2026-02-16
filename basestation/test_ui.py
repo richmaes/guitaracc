@@ -8,7 +8,6 @@ import serial
 import sys
 import threading
 import time
-import select
 from pathlib import Path
 from select_port import select_port
 
@@ -58,9 +57,24 @@ class GuitarAccTerminal:
                     data = self.ser.read(self.ser.in_waiting)
                     sys.stdout.write(data.decode('utf-8', errors='replace'))
                     sys.stdout.flush()
+                else:
+                    time.sleep(0.01)  # Small delay to avoid busy loop
             except Exception as e:
                 if self.running:
                     print(f"\nRead error: {e}")
+                break
+    
+    def input_thread(self):
+        """Thread to read from stdin and send to serial"""
+        while self.running:
+            try:
+                line = sys.stdin.readline()
+                if line and self.ser and self.ser.is_open:
+                    self.ser.write(line.encode('utf-8'))
+                    self.ser.flush()
+            except Exception as e:
+                if self.running:
+                    print(f"\nInput error: {e}")
                 break
                 
     def run(self):
@@ -74,19 +88,19 @@ class GuitarAccTerminal:
         reader = threading.Thread(target=self.read_thread, daemon=True)
         reader.start()
         
+        # Start input thread
+        writer = threading.Thread(target=self.input_thread, daemon=True)
+        writer.start()
+        
         try:
-            # Main input loop
+            # Wait for Ctrl+C
             while self.running:
-                # Read from stdin
-                if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
-                    line = sys.stdin.readline()
-                    if line:
-                        self.ser.write(line.encode('utf-8'))
-                        self.ser.flush()
+                time.sleep(0.1)
         except KeyboardInterrupt:
             print("\nExiting...")
         finally:
             self.running = False
+            time.sleep(0.2)  # Give threads time to exit
             self.disconnect()
 
 def run_automated_test(port):

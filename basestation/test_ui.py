@@ -8,6 +8,8 @@ import serial
 import sys
 import threading
 import time
+import tty
+import termios
 from pathlib import Path
 from select_port import select_port
 
@@ -65,17 +67,33 @@ class GuitarAccTerminal:
                 break
     
     def input_thread(self):
-        """Thread to read from stdin and send to serial"""
-        while self.running:
-            try:
-                line = sys.stdin.readline()
-                if line and self.ser and self.ser.is_open:
-                    self.ser.write(line.encode('utf-8'))
-                    self.ser.flush()
-            except Exception as e:
-                if self.running:
-                    print(f"\nInput error: {e}")
-                break
+        """Thread to read from stdin and send to serial (raw mode for special keys)"""
+        old_settings = None
+        try:
+            # Save old terminal settings and switch to raw mode
+            old_settings = termios.tcgetattr(sys.stdin)
+            tty.setraw(sys.stdin.fileno())
+            
+            while self.running:
+                try:
+                    # Read one character at a time
+                    char = sys.stdin.read(1)
+                    if char and self.ser and self.ser.is_open:
+                        # Handle Ctrl+C (0x03)
+                        if ord(char) == 3:
+                            self.running = False
+                            break
+                        # Send character to serial
+                        self.ser.write(char.encode('utf-8') if isinstance(char, str) else char)
+                        self.ser.flush()
+                except Exception as e:
+                    if self.running:
+                        print(f"\nInput error: {e}")
+                    break
+        finally:
+            # Restore terminal settings
+            if old_settings:
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
                 
     def run(self):
         """Run the interactive terminal"""

@@ -49,3 +49,6 @@ client/test/test_motion.dSYM/*
 integration_test/test_integration
 client/test/test_motion
 client/test/test_motion.dSYM/*
+venv/lib/*
+venv/bin/*
+

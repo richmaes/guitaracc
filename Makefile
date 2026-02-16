@@ -106,7 +106,13 @@ build-basestation: check-west
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Building Basestation for nRF5340 Audio DK$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@cd basestation && west build -b nrf5340_audio_dk/nrf5340/cpuapp --build-dir build 2>&1 | tee build/build.log
+	@mkdir -p basestation/build
+	@if [ ! -f basestation/build/build.ninja ]; then \
+		echo "$(YELLOW)Build directory incomplete, running pristine build...$(NC)"; \
+		cd basestation && west build -b nrf5340_audio_dk/nrf5340/cpuapp --build-dir build --pristine 2>&1 | tee build/build.log; \
+	else \
+		cd basestation && west build -b nrf5340_audio_dk/nrf5340/cpuapp --build-dir build 2>&1 | tee build/build.log; \
+	fi
 	@$(MAKE) validate-basestation-overlays
 	@echo "$(GREEN)✓ Basestation build complete$(NC)"
 
@@ -115,6 +121,7 @@ build-client: check-west
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Building Client for Thingy:53$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@mkdir -p client/build
 	@cd client && CMAKE=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake west build -b thingy53/nrf5340/cpuapp --build-dir build --sysbuild -- -DPython3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dclient_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dmcuboot_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dempty_net_core_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Db0n_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 2>&1 | tee build/build.log
 	@$(MAKE) validate-client-overlays
 	@echo "$(GREEN)✓ Client build complete$(NC)"
@@ -143,10 +150,7 @@ rebuild-client: check-west
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Pristine build: Client$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@echo "$(YELLOW)Executing build command:$(NC)"
-	@echo "CMAKE=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake west build --build-dir /Users/richmaes/src/guitaracc/client/build /Users/richmaes/src/guitaracc/client --pristine --board thingy53/nrf5340/cpuapp --sysbuild -- -DDEBUG_THREAD_INFO=Off -DPython3_EXECUTABLE=$(WEST_PYTHON) -Dclient_Python3_EXECUTABLE=$(WEST_PYTHON) -Dmcuboot_Python3_EXECUTABLE=$(WEST_PYTHON) -Dempty_net_core_Python3_EXECUTABLE=$(WEST_PYTHON) -Db0n_Python3_EXECUTABLE=$(WEST_PYTHON) -DCMAKE_COMMAND=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake -Dclient_DEBUG_THREAD_INFO=Off -Dmcuboot_DEBUG_THREAD_INFO=Off -Dipc_radio_DEBUG_THREAD_INFO=Off -Db0n_DEBUG_THREAD_INFO=Off"
-	@echo ""
-	CMAKE=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake west build --build-dir /Users/richmaes/src/guitaracc/client/build /Users/richmaes/src/guitaracc/client --pristine --board thingy53/nrf5340/cpuapp --sysbuild -- -DDEBUG_THREAD_INFO=Off -DPython3_EXECUTABLE=$(WEST_PYTHON) -Dclient_Python3_EXECUTABLE=$(WEST_PYTHON) -Dmcuboot_Python3_EXECUTABLE=$(WEST_PYTHON) -Dempty_net_core_Python3_EXECUTABLE=$(WEST_PYTHON) -Db0n_Python3_EXECUTABLE=$(WEST_PYTHON) -DCMAKE_COMMAND=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake -Dclient_DEBUG_THREAD_INFO=Off -Dmcuboot_DEBUG_THREAD_INFO=Off -Dipc_radio_DEBUG_THREAD_INFO=Off -Db0n_DEBUG_THREAD_INFO=Off
+	@cd client && CMAKE=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake west build -b thingy53/nrf5340/cpuapp --build-dir build --pristine --sysbuild -- -DDEBUG_THREAD_INFO=Off -DPython3_EXECUTABLE=$(WEST_PYTHON) -Dclient_Python3_EXECUTABLE=$(WEST_PYTHON) -Dmcuboot_Python3_EXECUTABLE=$(WEST_PYTHON) -Dempty_net_core_Python3_EXECUTABLE=$(WEST_PYTHON) -Db0n_Python3_EXECUTABLE=$(WEST_PYTHON) -DCMAKE_COMMAND=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake -Dclient_DEBUG_THREAD_INFO=Off -Dmcuboot_DEBUG_THREAD_INFO=Off -Dipc_radio_DEBUG_THREAD_INFO=Off -Db0n_DEBUG_THREAD_INFO=Off
 	@echo "$(GREEN)✓ Client pristine build complete$(NC)"
 
 #==============================================================================
@@ -321,13 +325,13 @@ validate-basestation-overlays:
 	echo "Checking compiled devicetree: $$DTS_FILE"; \
 	echo ""; \
 	echo "$(YELLOW)Verifying overlay file application:$(NC)"; \
-	if grep -q "guitaracc/basestation/app.overlay" "$$DTS_FILE"; then \
+	if grep -q "basestation/app.overlay" "$$DTS_FILE"; then \
 		echo "$(GREEN)✓ app.overlay applied (referenced in devicetree)$(NC)"; \
 	else \
 		echo "$(RED)✗ app.overlay NOT applied$(NC)"; \
 		VALIDATION_FAILED=1; \
 	fi; \
-	if grep -q "guitaracc/basestation/hci_ipc.overlay" "$$DTS_FILE" || \
+	if grep -q "basestation/hci_ipc.overlay" "$$DTS_FILE" || \
 	   find basestation/build -name "*.dts" -exec grep -l "hci_ipc.overlay" {} \; | grep -q .; then \
 		echo "$(GREEN)✓ hci_ipc.overlay applied (referenced in devicetree)$(NC)"; \
 	else \

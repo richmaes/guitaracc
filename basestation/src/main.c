@@ -53,6 +53,9 @@ static struct bt_uuid_128 guitar_accel_char_uuid = BT_UUID_INIT_128(
 /* MIDI UART device */
 static const struct device *midi_uart;
 
+/* UI/Config UART device (UART1 on VCOM0) */
+static const struct device *ui_uart;
+
 /* MIDI TX queue for interrupt-driven transmission */
 #define MIDI_TX_QUEUE_SIZE 16
 #define MIDI_TX_MAX_QUEUED 6  /* Don't write if more than this many bytes queued */
@@ -162,6 +165,16 @@ static void send_midi_cc(uint8_t channel, uint8_t cc_number, uint8_t value)
 	
 	/* Queue for interrupt-driven transmission */
 	queue_midi_bytes(midi_msg, 3);
+	
+	/* Test output on UI UART */
+	LOG_DBG("UI UART test: ui_uart=%p, ready=%d", 
+		ui_uart, ui_uart ? device_is_ready(ui_uart) : 0);
+	if (ui_uart && device_is_ready(ui_uart)) {
+		uart_poll_out(ui_uart, 'A');
+		LOG_DBG("UI UART: sent 'A'");
+	} else {
+		LOG_DBG("UI UART: not ready, skipped");
+	}
 	
 #if MIDI_DEBUG
 	LOG_DBG("MIDI CC ch=%d, cc=%d, val=%d", channel, cc_number, value);
@@ -952,6 +965,14 @@ int main(void)
 	uart_irq_rx_disable(midi_uart);
 	
 	LOG_INF("MIDI UART initialized (interrupt-driven)");
+
+	/* Initialize UI/Config UART (UART1 on VCOM0) */
+	ui_uart = DEVICE_DT_GET(DT_NODELABEL(uart1));
+	if (!device_is_ready(ui_uart)) {
+		LOG_WRN("UI UART device not ready - UI interface unavailable");
+	} else {
+		LOG_INF("UI UART initialized on VCOM0 at 115200 baud");
+	}
 
 	/* Initialize accelerometer to MIDI mapping configurations */
 	/* Based on captured data: X[837:935], Y[56:294], Z[223:665] */

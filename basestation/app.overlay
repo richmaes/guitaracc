@@ -1,5 +1,12 @@
 /* UART configuration for MIDI output */
 
+/* Chosen devices */
+/ {
+	chosen {
+		zephyr,shell-uart = &uart1;
+	};
+};
+
 /* Reconfigure GPIO forwarder to forward P1.12, P1.13, P1.14, P1.15 to network core */
 &gpio_fwd {
 	status = "okay";

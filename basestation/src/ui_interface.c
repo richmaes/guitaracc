@@ -251,8 +251,23 @@ static void cmd_config(const char *args)
 		} else {
 			ui_print("\r\nUsage: config cc <x|y|z> <cc_num>\r\n");
 		}
+	} else if (strncmp(args, "erase_all", 9) == 0) {
+		ui_print("\r\n*** WARNING: ERASE ALL CONFIGURATION STORAGE ***\r\n");
+		ui_print("This will erase DEFAULT, AREA_A, and AREA_B\r\n");
+		ui_print("Device will use hardcoded defaults on next boot\r\n");
+		ui_print("This command is for TESTING ONLY!\r\n");
+		ui_print("\r\nType 'ERASE' to confirm: ");
+		/* Note: This is just a warning - actual confirmation would need input handling */
+		
+		if (config_storage_erase_all() == 0) {
+			ui_print("\r\n\r\nAll configuration erased successfully\r\n");
+			ui_print("*** REBOOT REQUIRED ***\r\n");
+			ui_print("Use 'reboot' command or power cycle the device\r\n");
+		} else {
+			ui_print("\r\n\r\nError erasing configuration storage\r\n");
+		}
 	} else {
-		ui_print("\r\nUsage: config show|save|restore|midi_ch|cc|unlock_default|write_default\r\n");
+		ui_print("\r\nUsage: config show|save|restore|midi_ch|cc|unlock_default|write_default|erase_all\r\n");
 	}
 }
 

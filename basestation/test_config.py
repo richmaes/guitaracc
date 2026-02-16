@@ -2,8 +2,12 @@
 import serial
 import time
 import sys
+from select_port import select_port
 
-port = '/dev/tty.usbmodem0010501849051'
+port = select_port(auto_select=True)
+if port is None:
+    print("No port selected. Exiting.")
+    sys.exit(1)
 
 try:
     ser = serial.Serial(port, 115200, timeout=2, rtscts=True)

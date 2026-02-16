@@ -10,9 +10,9 @@ import threading
 import time
 import select
 from pathlib import Path
+from select_port import select_port
 
-# Default serial port for macOS (adjust as needed)
-DEFAULT_PORT = "/dev/tty.usbmodem0010501849051"
+# Baud rate for basestation UART
 BAUD_RATE = 115200
 
 class GuitarAccTerminal:
@@ -197,6 +197,56 @@ def write_factory_defaults(port):
     return True
 
 
+def erase_config_storage(port):
+    """Erase all configuration storage areas (testing only)"""
+    print("Erasing configuration storage...")
+    print("-" * 50)
+    print("WARNING: This will erase all configuration data!")
+    print("The device will boot with hardcoded defaults.")
+    print("This tests that uninitialized config doesn't lock up the system.")
+    
+    confirm = input("Type 'ERASE' to continue: ")
+    if confirm != "ERASE":
+        print("Aborted.")
+        return False
+    
+    try:
+        ser = serial.Serial(
+            port=port,
+            baudrate=BAUD_RATE,
+            timeout=2,
+            rtscts=True
+        )
+        
+        # Wait for any startup messages
+        time.sleep(1)
+        ser.reset_input_buffer()
+        
+        print("\nErasing all configuration areas...")
+        ser.write(b"config erase_all\r\n")
+        ser.flush()
+        
+        # Read response
+        time.sleep(1.5)
+        if ser.in_waiting:
+            response = ser.read(ser.in_waiting).decode('utf-8', errors='replace')
+            print("Response:")
+            print(response)
+        else:
+            print("No response received")
+        
+        ser.close()
+        print("\n" + "-" * 50)
+        print("Configuration storage erased")
+        print("Please reboot the device to test initialization with no config")
+        
+    except serial.SerialException as e:
+        print(f"Error: {e}")
+        return False
+    
+    return True
+
+
 def list_ports():
     """List available serial ports"""
     import glob
@@ -223,8 +273,8 @@ def main():
     )
     parser.add_argument(
         '-p', '--port',
-        default=DEFAULT_PORT,
-        help=f'Serial port (default: {DEFAULT_PORT})'
+        default=None,
+        help='Serial port (if not specified, will prompt for selection)'
     )
     parser.add_argument(
         '-b', '--baudrate',
@@ -247,12 +297,28 @@ def main():
         action='store_true',
         help='Write factory default configuration (WARNING: manufacturing only!)'
     )
+    parser.add_argument(
+        '-e', '--erase-config',
+        action='store_true',
+        help='Erase all configuration storage (WARNING: testing only!)'
+    )
     
     args = parser.parse_args()
     
     if args.list:
         list_ports()
         return
+    
+    # Select port if not specified
+    if args.port is None:
+        args.port = select_port(auto_select=True)
+        if args.port is None:
+            print("No port selected. Exiting.")
+            sys.exit(1)
+        
+    if args.erase_config:
+        success = erase_config_storage(args.port)
+        sys.exit(0 if success else 1)
         
     if args.write_defaults:
         success = write_factory_defaults(args.port)

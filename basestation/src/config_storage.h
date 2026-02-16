@@ -179,6 +179,19 @@ int config_storage_unlock_default_write(void);
 bool config_storage_is_default_write_enabled(void);
 
 /**
+ * @brief Erase all configuration storage areas (testing only)
+ * 
+ * Erases DEFAULT, AREA_A, and AREA_B to simulate a brand new device.
+ * Used for testing initialization with no stored configuration.
+ * 
+ * WARNING: This permanently erases all stored configuration!
+ * Only use for testing and development.
+ * 
+ * @return 0 on success, negative errno on failure
+ */
+int config_storage_erase_all(void);
+
+/**
  * @brief Get default configuration values (hardcoded)
  * 
  * Returns hardcoded default configuration used when no valid stored

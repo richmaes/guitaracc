@@ -55,9 +55,6 @@ static struct bt_uuid_128 guitar_accel_char_uuid = BT_UUID_INIT_128(
 /* MIDI UART device */
 static const struct device *midi_uart;
 
-/* UI/Config UART device (UART1 on VCOM0) */
-static const struct device *ui_uart;
-
 /* MIDI TX queue for interrupt-driven transmission */
 #define MIDI_TX_QUEUE_SIZE 16
 #define MIDI_TX_MAX_QUEUED 6  /* Don't write if more than this many bytes queued */
@@ -99,20 +96,6 @@ static void reload_config(void)
 			current_config.cc_mapping[0],
 			current_config.cc_mapping[1],
 			current_config.cc_mapping[2]);
-	}
-}
-
-/* UI UART ISR for command interface */
-static void ui_uart_isr(const struct device *dev, void *user_data)
-{
-	uart_irq_update(dev);
-	
-	if (uart_irq_rx_ready(dev)) {
-		uint8_t byte;
-		while (uart_fifo_read(dev, &byte, 1) > 0) {
-			/* Process character through UI interface */
-			ui_interface_process_char((char)byte);
-		}
 	}
 }
 
@@ -510,7 +493,8 @@ static void connected(struct bt_conn *conn, uint8_t conn_err)
 	ui_led_update_connection_count(1);
 	
 	/* Update UI interface status */
-	ui_interface_update_status(1, true);
+	ui_set_connected_devices(1);
+	ui_set_midi_output_active(true);
 	
 #if BLE_DEBUG
 	LOG_INF("BLE: Guitar connected");
@@ -550,11 +534,8 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 		ui_led_update_connection_count(0);
 		
 		/* Update UI interface status */
-		ui_interface_update_status(0, false);
-		
-#if BLE_DEBUG
-		LOG_INF("BLE: Guitar disconnected");
-#endif
+	ui_set_connected_devices(0);
+	ui_set_midi_output_active(false);
 	}
 
 	if (bt_hogp_assign_check(&hogp)) {
@@ -1021,24 +1002,14 @@ int main(void)
 	
 	LOG_INF("MIDI UART initialized (interrupt-driven)");
 
-	/* Initialize UI/Config UART (UART1 on VCOM0) */
-	ui_uart = DEVICE_DT_GET(DT_NODELABEL(uart1));
-	if (!device_is_ready(ui_uart)) {
-		LOG_WRN("UI UART device not ready - UI interface unavailable");
+	/* Initialize UI interface (Zephyr Shell - no UART setup needed) */
+	err = ui_interface_init();
+	if (err) {
+		LOG_ERR("Failed to initialize UI interface (err %d)", err);
 	} else {
-		/* Set up RX interrupt for command interface */
-		uart_irq_callback_set(ui_uart, ui_uart_isr);
-		uart_irq_rx_enable(ui_uart);
-		
-		/* Initialize UI interface module */
-		err = ui_interface_init(ui_uart);
-		if (err) {
-			LOG_ERR("Failed to initialize UI interface (err %d)", err);
-		} else {
-			LOG_INF("UI interface ready on VCOM0 at 115200 baud");
-			/* Set config reload callback */
-			ui_config_reload_callback = reload_config;
-		}
+		LOG_INF("UI interface ready (Zephyr Shell)");
+		/* Set config reload callback */
+		ui_config_reload_callback = reload_config;
 	}
 
 	/* Initialize accelerometer to MIDI mapping configurations */

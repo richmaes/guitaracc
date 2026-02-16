@@ -28,7 +28,7 @@ LOG_MODULE_REGISTER(config_storage, LOG_LEVEL_DBG);
  * This matches the partition manager output and avoids code conflicts
  */
 #define CONFIG_FLASH_OFFSET  0x000FC000  /* From pm_static.yml */
-#define CONFIG_FLASH_SIZE    0x00004000  /* 16KB */
+#define CONFIG_STORAGE_SIZE  0x00004000  /* 16KB */
 
 /* Subdivide the storage area into three 4KB sections */
 #define CONFIG_DEFAULT_OFFSET  (CONFIG_FLASH_OFFSET + 0x0000)  /* +0KB */
@@ -218,26 +218,26 @@ static int write_area(enum config_area area, const struct config_data *data,
 	header.crc32 = calculate_header_crc(&header);
 	
 	/* Erase flash page */
-	LOG_DBG("Erasing flash at offset 0x%08x, size 0x%x", offset, FLASH_PAGE_SIZE);
+	LOG_DBG("Erasing flash at offset 0x%08lx, size 0x%x", (long)offset, FLASH_PAGE_SIZE);
 	ret = flash_erase(flash_dev, offset, FLASH_PAGE_SIZE);
 	if (ret != 0) {
-		LOG_ERR("Failed to erase area %d at 0x%08x: %d", area, offset, ret);
+		LOG_ERR("Failed to erase area %d at 0x%08lx: %d", area, (long)offset, ret);
 		return ret;
 	}
 	
 	/* Write header */
-	LOG_DBG("Writing header to offset 0x%08x", offset);
+	LOG_DBG("Writing header to offset 0x%08lx", (long)offset);
 	ret = flash_write(flash_dev, offset, &header, sizeof(header));
 	if (ret != 0) {
-		LOG_ERR("Failed to write header to area %d at 0x%08x: %d", area, offset, ret);
+		LOG_ERR("Failed to write header to area %d at 0x%08lx: %d", area, (long)offset, ret);
 		return ret;
 	}
 	
 	/* Write data */
-	LOG_DBG("Writing data to offset 0x%08x", offset + sizeof(header));
+	LOG_DBG("Writing data to offset 0x%08lx", (long)(offset + sizeof(header)));
 	ret = flash_write(flash_dev, offset + sizeof(header), data, sizeof(*data));
 	if (ret != 0) {
-		LOG_ERR("Failed to write data to area %d at 0x%08x: %d", area, offset + sizeof(header), ret);
+		LOG_ERR("Failed to write data to area %d at 0x%08lx: %d", area, (long)(offset + sizeof(header)), ret);
 		return ret;
 	}
 	
@@ -302,7 +302,7 @@ int config_storage_init(void)
 	LOG_INF("Data size: %zu bytes", sizeof(struct config_data));
 	
 	/* Log storage partition info */
-	LOG_INF("Storage: offset=0x%08x size=0x%x", CONFIG_FLASH_OFFSET, CONFIG_FLASH_SIZE);
+	LOG_INF("Storage: offset=0x%08x size=0x%x", CONFIG_FLASH_OFFSET, CONFIG_STORAGE_SIZE);
 	LOG_INF("DEFAULT: 0x%08x, A: 0x%08x, B: 0x%08x",
 		CONFIG_DEFAULT_OFFSET, CONFIG_AREA_A_OFFSET, CONFIG_AREA_B_OFFSET);
 	
@@ -352,9 +352,14 @@ int config_storage_init(void)
 			current_sequence = 0;
 			active_area = CONFIG_AREA_A;
 			
-			/* Save default to active area */
-			write_area(CONFIG_AREA_A, &current_config, 1);
-			current_sequence = 1;
+			/* Try to save default to active area (non-fatal if it fails) */
+			int ret = write_area(CONFIG_AREA_A, &current_config, 1);
+			if (ret == 0) {
+				current_sequence = 1;
+				LOG_INF("DEFAULT copied to area A");
+			} else {
+				LOG_WRN("Failed to write DEFAULT to area A: %d (continuing anyway)", ret);
+			}
 		} else {
 			/* No valid config anywhere - use hardcoded defaults */
 			LOG_WRN("No valid config found, using hardcoded defaults");
@@ -362,9 +367,14 @@ int config_storage_init(void)
 			current_sequence = 0;
 			active_area = CONFIG_AREA_A;
 			
-			/* Save hardcoded defaults to active area */
-			write_area(CONFIG_AREA_A, &current_config, 1);
-			current_sequence = 1;
+			/* Try to save hardcoded defaults to active area (non-fatal if it fails) */
+			int ret = write_area(CONFIG_AREA_A, &current_config, 1);
+			if (ret == 0) {
+				current_sequence = 1;
+				LOG_INF("Hardcoded defaults written to area A");
+			} else {
+				LOG_WRN("Failed to write defaults to area A: %d (continuing anyway)", ret);
+			}
 		}
 	}
 	
@@ -511,4 +521,44 @@ bool config_storage_is_default_write_enabled(void)
 #else
 	return false;
 #endif
+}
+
+int config_storage_erase_all(void)
+{
+	if (!initialized) {
+		LOG_ERR("Cannot erase: not initialized");
+		return -EACCES;
+	}
+	
+	LOG_WRN("*** ERASING ALL CONFIGURATION STORAGE ***");
+	LOG_WRN("This will erase DEFAULT, AREA_A, and AREA_B");
+	
+	/* Erase all three areas */
+	int ret;
+	
+	LOG_INF("Erasing DEFAULT at 0x%08x...", CONFIG_DEFAULT_OFFSET);
+	ret = flash_erase(flash_dev, CONFIG_DEFAULT_OFFSET, FLASH_PAGE_SIZE);
+	if (ret != 0) {
+		LOG_ERR("Failed to erase DEFAULT: %d", ret);
+		return ret;
+	}
+	
+	LOG_INF("Erasing AREA_A at 0x%08x...", CONFIG_AREA_A_OFFSET);
+	ret = flash_erase(flash_dev, CONFIG_AREA_A_OFFSET, FLASH_PAGE_SIZE);
+	if (ret != 0) {
+		LOG_ERR("Failed to erase AREA_A: %d", ret);
+		return ret;
+	}
+	
+	LOG_INF("Erasing AREA_B at 0x%08x...", CONFIG_AREA_B_OFFSET);
+	ret = flash_erase(flash_dev, CONFIG_AREA_B_OFFSET, FLASH_PAGE_SIZE);
+	if (ret != 0) {
+		LOG_ERR("Failed to erase AREA_B: %d", ret);
+		return ret;
+	}
+	
+	LOG_WRN("All configuration areas erased - device will use defaults on next boot");
+	LOG_WRN("*** REBOOT REQUIRED ***");
+	
+	return 0;
 }

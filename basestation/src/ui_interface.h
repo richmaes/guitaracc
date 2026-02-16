@@ -7,39 +7,34 @@
 #define UI_INTERFACE_H
 
 #include <zephyr/kernel.h>
-#include <zephyr/drivers/uart.h>
+#include <stdbool.h>
 
 /**
- * @brief Initialize the UI interface
+ * @brief Initialize the UI interface (Zephyr Shell)
  * 
- * @param uart_dev UART device to use for UI interface
  * @return 0 on success, negative error code on failure
  */
-int ui_interface_init(const struct device *uart_dev);
+int ui_interface_init(void);
 
 /**
- * @brief Process incoming character from UI interface
- * Called from UART ISR
+ * @brief Update connected devices count
  * 
- * @param c Character received
+ * @param count Number of connected devices
  */
-void ui_interface_process_char(char c);
+void ui_set_connected_devices(int count);
 
 /**
- * @brief Print a message to the UI interface
+ * @brief Update MIDI output active state
  * 
- * @param fmt Printf-style format string
- * @param ... Format arguments
+ * @param active True if MIDI output is active
  */
-void ui_print(const char *fmt, ...);
+void ui_set_midi_output_active(bool active);
 
 /**
- * @brief Update system status information
- * Called by main application when status changes
+ * @brief Configuration reload callback
  * 
- * @param connected_count Number of connected devices
- * @param midi_active True if MIDI output is active
+ * Set this callback to be notified when configuration changes via shell
  */
-void ui_interface_update_status(int connected_count, bool midi_active);
+extern void (*ui_config_reload_callback)(void);
 
 #endif /* UI_INTERFACE_H */

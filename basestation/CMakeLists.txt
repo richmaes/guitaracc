@@ -20,6 +20,6 @@ target_sources(app PRIVATE
     src/midi_logic.c
     src/accel_mapping.c
     src/ui_led.c
-    src/ui_interface.c
+    src/ui_interface_shell.c
     src/config_storage.c
 )

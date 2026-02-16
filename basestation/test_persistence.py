@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 import serial
 import time
+import sys
+from select_port import select_port
 
-port = '/dev/tty.usbmodem0010501849051'
+port = select_port(auto_select=True)
+if port is None:
+    print("No port selected. Exiting.")
+    sys.exit(1)
+
 baudrate = 115200
 
 print(f"Opening {port}...")

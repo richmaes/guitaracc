@@ -235,6 +235,78 @@ static int cmd_config_write_default(const struct shell *sh, size_t argc, char **
 	return 0;
 }
 
+static int cmd_midi_rx_stats(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	
+	struct midi_rx_stats stats;
+	ui_get_midi_rx_stats(&stats);
+	
+	shell_print(sh, "\n=== MIDI RX Statistics ===");
+	shell_print(sh, "Total bytes received: %u", stats.total_bytes);
+	shell_print(sh, "Clock messages (0xF8): %u", stats.clock_messages);
+	
+	if (stats.clock_messages > 0 && stats.clock_interval_us > 0) {
+		/* Calculate BPM from clock interval */
+		/* MIDI clock runs at 24 pulses per quarter note */
+		/* BPM = (60,000,000 / interval_us) / 24 */
+		uint32_t bpm = (60000000 / stats.clock_interval_us) / 24;
+		shell_print(sh, "Clock interval: %u us (~%u BPM)", 
+			    stats.clock_interval_us, bpm);
+	}
+	
+	shell_print(sh, "Start messages (0xFA): %u", stats.start_messages);
+	shell_print(sh, "Continue messages (0xFB): %u", stats.continue_messages);
+	shell_print(sh, "Stop messages (0xFC): %u", stats.stop_messages);
+	shell_print(sh, "Other messages: %u", stats.other_messages);
+	
+	return 0;
+}
+
+static int cmd_midi_rx_reset(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	
+	ui_reset_midi_rx_stats();
+	shell_print(sh, "MIDI RX statistics reset");
+	
+	return 0;
+}
+
+static int cmd_midi_send_rt(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc < 2) {
+		shell_error(sh, "Usage: midi send_rt <0xF8-0xFF>");
+		shell_print(sh, "Common real-time messages:");
+		shell_print(sh, "  0xF8 - Timing Clock");
+		shell_print(sh, "  0xFA - Start");
+		shell_print(sh, "  0xFB - Continue");
+		shell_print(sh, "  0xFC - Stop");
+		shell_print(sh, "  0xFE - Active Sensing");
+		shell_print(sh, "  0xFF - Reset");
+		return -1;
+	}
+	
+	/* Parse hex value */
+	unsigned long rt_byte = strtoul(argv[1], NULL, 16);
+	
+	if (rt_byte < 0xF8 || rt_byte > 0xFF) {
+		shell_error(sh, "Invalid real-time byte (must be 0xF8-0xFF)");
+		return -1;
+	}
+	
+	int err = send_midi_realtime((uint8_t)rt_byte);
+	if (err != 0) {
+		shell_error(sh, "Failed to send real-time message (err %d)", err);
+		return err;
+	}
+	
+	shell_print(sh, "Sent real-time message: 0x%02X", (uint8_t)rt_byte);
+	return 0;
+}
+
 static int cmd_config_erase_all(const struct shell *sh, size_t argc, char **argv)
 {
 	ARG_UNUSED(argc);
@@ -273,7 +345,15 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_config,
 	SHELL_SUBCMD_SET_END
 );
 
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_midi,
+	SHELL_CMD(rx_stats, NULL, "Show MIDI RX statistics", cmd_midi_rx_stats),
+	SHELL_CMD(rx_reset, NULL, "Reset MIDI RX statistics", cmd_midi_rx_reset),
+	SHELL_CMD_ARG(send_rt, NULL, "Send MIDI real-time message <0xF8-0xFF>", cmd_midi_send_rt, 2, 0),
+	SHELL_SUBCMD_SET_END
+);
+
 SHELL_CMD_REGISTER(config, &sub_config, "Configuration commands", NULL);
+SHELL_CMD_REGISTER(midi, &sub_midi, "MIDI commands", NULL);
 SHELL_CMD_REGISTER(status, NULL, "Show system status", cmd_status);
 
 /*

@@ -63,6 +63,21 @@ static volatile size_t midi_tx_head = 0;
 static volatile size_t midi_tx_tail = 0;
 static K_SEM_DEFINE(midi_tx_sem, 0, 1);
 
+/* MIDI TX priority queue for real-time messages */
+#define MIDI_TX_RT_QUEUE_SIZE 8
+static uint8_t midi_tx_rt_queue[MIDI_TX_RT_QUEUE_SIZE];
+static volatile size_t midi_tx_rt_head = 0;
+static volatile size_t midi_tx_rt_tail = 0;
+
+/* MIDI RX buffer and statistics */
+#define MIDI_RX_QUEUE_SIZE 64
+static uint8_t midi_rx_queue[MIDI_RX_QUEUE_SIZE];
+static volatile size_t midi_rx_head = 0;
+static volatile size_t midi_rx_tail = 0;
+
+/* MIDI receive statistics (structure defined in ui_interface.h) */
+static struct midi_rx_stats rx_stats = {0};
+
 /* Guitar connection state */
 struct guitar_connection {
 	struct bt_conn *conn;
@@ -105,8 +120,21 @@ static void uart_isr(const struct device *dev, void *user_data)
 	uart_irq_update(dev);
 	
 	if (uart_irq_tx_ready(dev)) {
-		if (midi_tx_tail != midi_tx_head) {
-			/* Get next byte from queue */
+		/* Check priority queue first (real-time messages) */
+		if (midi_tx_rt_tail != midi_tx_rt_head) {
+			/* Get next byte from priority queue */
+			uint8_t byte = midi_tx_rt_queue[midi_tx_rt_tail];
+			midi_tx_rt_tail = (midi_tx_rt_tail + 1) % MIDI_TX_RT_QUEUE_SIZE;
+			
+			/* Send byte */
+#if MIDI_DEBUG
+			int sent = uart_fifo_fill(dev, &byte, 1);
+			LOG_DBG("UART ISR: sent RT byte 0x%02x (result=%d)", byte, sent);
+#else
+			uart_fifo_fill(dev, &byte, 1);
+#endif
+		} else if (midi_tx_tail != midi_tx_head) {
+			/* Get next byte from regular queue */
 			uint8_t byte = midi_tx_queue[midi_tx_tail];
 			midi_tx_tail = (midi_tx_tail + 1) % MIDI_TX_QUEUE_SIZE;
 			
@@ -118,20 +146,62 @@ static void uart_isr(const struct device *dev, void *user_data)
 			uart_fifo_fill(dev, &byte, 1);
 #endif
 		} else {
-			/* Queue empty, disable TX interrupt */
+			/* Both queues empty, disable TX interrupt */
 			uart_irq_tx_disable(dev);
 			k_sem_give(&midi_tx_sem);
 #if MIDI_DEBUG
-			LOG_DBG("UART ISR: queue empty, TX disabled");
+			LOG_DBG("UART ISR: queues empty, TX disabled");
 #endif
 		}
 	}
 	
-	/* Drain RX FIFO if needed */
+	/* Process RX FIFO */
 	if (uart_irq_rx_ready(dev)) {
-		uint8_t dummy;
-		while (uart_fifo_read(dev, &dummy, 1) > 0) {
-			/* Discard received data */
+		uint8_t byte;
+		while (uart_fifo_read(dev, &byte, 1) > 0) {
+			/* Add to RX queue if space available */
+			size_t next_head = (midi_rx_head + 1) % MIDI_RX_QUEUE_SIZE;
+			if (next_head != midi_rx_tail) {
+				midi_rx_queue[midi_rx_head] = byte;
+				midi_rx_head = next_head;
+			}
+			
+			/* Update statistics for real-time messages */
+			rx_stats.total_bytes++;
+			if (byte == 0xF8) {
+				/* MIDI Timing Clock */
+				uint32_t now = k_uptime_get_32();
+				if (rx_stats.last_clock_time != 0) {
+					uint32_t interval_ms = now - rx_stats.last_clock_time;
+					rx_stats.clock_interval_us = interval_ms * 1000;
+				}
+				rx_stats.last_clock_time = now;
+				rx_stats.clock_messages++;
+			} else if (byte == 0xFA) {
+				rx_stats.start_messages++;
+			} else if (byte == 0xFB) {
+				rx_stats.continue_messages++;
+			} else if (byte == 0xFC) {
+				rx_stats.stop_messages++;
+			} else if (byte >= 0xF0) {
+				rx_stats.other_messages++;
+			}
+			
+			/* Forward real-time messages (0xF8-0xFF) to output via priority queue */
+			if (byte >= 0xF8) {
+				/* Queue directly to priority queue for immediate transmission */
+				size_t rt_queued = (midi_tx_rt_head >= midi_tx_rt_tail) ? 
+					(midi_tx_rt_head - midi_tx_rt_tail) : 
+					(MIDI_TX_RT_QUEUE_SIZE - midi_tx_rt_tail + midi_tx_rt_head);
+				size_t rt_available = (MIDI_TX_RT_QUEUE_SIZE - 1) - rt_queued;
+				
+				if (rt_available > 0) {
+					midi_tx_rt_queue[midi_tx_rt_head] = byte;
+					midi_tx_rt_head = (midi_tx_rt_head + 1) % MIDI_TX_RT_QUEUE_SIZE;
+					/* Enable TX interrupt to start transmission */
+					uart_irq_tx_enable(dev);
+				}
+			}
 		}
 	}
 }
@@ -177,6 +247,41 @@ static int queue_midi_bytes(const uint8_t *data, size_t len)
 	return 0;
 }
 
+static int queue_midi_rt_bytes(const uint8_t *data, size_t len)
+{
+	if (!midi_uart) {
+		return -ENODEV;
+	}
+	
+	/* Calculate current priority queue depth */
+	size_t queued = (midi_tx_rt_head >= midi_tx_rt_tail) ? 
+		(midi_tx_rt_head - midi_tx_rt_tail) : 
+		(MIDI_TX_RT_QUEUE_SIZE - midi_tx_rt_tail + midi_tx_rt_head);
+	
+	/* Check if there's enough space for the entire message */
+	size_t available = (MIDI_TX_RT_QUEUE_SIZE - 1) - queued;
+	if (len > available) {
+		LOG_WRN("Not enough space in MIDI RT TX queue (%d available, %d needed), dropping message", 
+			available, len);
+		return -ENOMEM;
+	}
+	
+	/* Add bytes to priority queue */
+	for (size_t i = 0; i < len; i++) {
+		midi_tx_rt_queue[midi_tx_rt_head] = data[i];
+		midi_tx_rt_head = (midi_tx_rt_head + 1) % MIDI_TX_RT_QUEUE_SIZE;
+	}
+	
+#if MIDI_DEBUG
+	LOG_DBG("Queued %d RT bytes, head=%d tail=%d", len, midi_tx_rt_head, midi_tx_rt_tail);
+#endif
+	
+	/* Enable TX interrupt to start transmission */
+	uart_irq_tx_enable(midi_uart);
+	
+	return 0;
+}
+
 static void send_midi_cc(uint8_t channel, uint8_t cc_number, uint8_t value)
 {
 	uint8_t midi_msg[3];
@@ -190,6 +295,32 @@ static void send_midi_cc(uint8_t channel, uint8_t cc_number, uint8_t value)
 #if MIDI_DEBUG
 	LOG_DBG("MIDI CC ch=%d, cc=%d, val=%d", channel, cc_number, value);
 #endif
+}
+
+/* Get MIDI RX statistics */
+void ui_get_midi_rx_stats(struct midi_rx_stats *stats)
+{
+	if (stats) {
+		memcpy(stats, &rx_stats, sizeof(rx_stats));
+	}
+}
+
+/* Reset MIDI RX statistics */
+void ui_reset_midi_rx_stats(void)
+{
+	memset(&rx_stats, 0, sizeof(rx_stats));
+}
+
+/* Send MIDI real-time message (single byte, high priority) */
+int send_midi_realtime(uint8_t rt_byte)
+{
+	/* Verify it's a valid real-time message (0xF8-0xFF) */
+	if (rt_byte < 0xF8) {
+		LOG_WRN("Invalid real-time byte 0x%02x", rt_byte);
+		return -EINVAL;
+	}
+	
+	return queue_midi_rt_bytes(&rt_byte, 1);
 }
 
 /* Process acceleration data and convert to MIDI CC */
@@ -997,10 +1128,10 @@ int main(void)
 	/* Set up interrupt-driven UART */
 	uart_irq_callback_set(midi_uart, uart_isr);
 	
-	/* Disable RX interrupt (we only use TX) */
-	uart_irq_rx_disable(midi_uart);
+	/* Enable RX interrupt to receive MIDI data */
+	uart_irq_rx_enable(midi_uart);
 	
-	LOG_INF("MIDI UART initialized (interrupt-driven)");
+	LOG_INF("MIDI UART initialized (interrupt-driven, RX enabled)");
 
 	/* Initialize UI interface (Zephyr Shell - no UART setup needed) */
 	err = ui_interface_init();

@@ -19,6 +19,57 @@ struct accel_data {
 /* Motion detection configuration */
 #define MOTION_THRESHOLD 0.5     /* m/s² threshold for motion detection */
 
+/* Enable/disable running average filter (define to enable) */
+#define ENABLE_RUNNING_AVERAGE 1
+
+/* Running average depth (adjustable 3-10) */
+#define RUNNING_AVERAGE_DEPTH 5
+
+/* Spike limiter configuration */
+#define SPIKE_LIMIT_MILLI_G 500  /* Maximum allowed change per sample (0.5g) */
+
+/**
+ * @brief Initialize spike limiter
+ * 
+ * Sets the initial reference values for spike detection. Call this
+ * before using apply_spike_limiter().
+ * 
+ * @param initial Initial acceleration data
+ */
+void spike_limiter_init(const struct accel_data *initial);
+
+/**
+ * @brief Apply spike limiter to acceleration data
+ * 
+ * Limits the change in acceleration between samples to prevent
+ * sudden spikes from noise or sensor errors. Each axis is independently
+ * limited to SPIKE_LIMIT_MILLI_G change per sample.
+ * 
+ * @param raw Raw acceleration data from sensor
+ * @param limited Output limited acceleration data
+ */
+void apply_spike_limiter(const struct accel_data *raw, struct accel_data *limited);
+
+/**
+ * @brief Initialize running average filter
+ * 
+ * Resets the circular buffers and state for the running average filter.
+ * Must be called before using apply_running_average().
+ */
+void running_average_init(void);
+
+/**
+ * @brief Apply running average filter
+ * 
+ * Applies a running average filter to smooth accelerometer data.
+ * The depth is configurable via RUNNING_AVERAGE_DEPTH (3-10 samples).
+ * Uses separate circular buffers for each axis.
+ * 
+ * @param input Input acceleration data
+ * @param output Output smoothed acceleration data
+ */
+void apply_running_average(const struct accel_data *input, struct accel_data *output);
+
 /**
  * @brief Convert acceleration from m/s² to milli-g
  * 

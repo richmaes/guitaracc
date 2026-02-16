@@ -7,23 +7,37 @@ LDFLAGS = -lm
 
 # Source files
 MOTION_LOGIC_SRC = ../src/motion_logic.c
-TEST_SRC = test_motion.c
 
-# Output
-TEST_BIN = test_motion
+# Test files
+TEST_MOTION = test_motion
+TEST_FILTERS = test_filters
+
+# All tests
+TESTS = $(TEST_MOTION) $(TEST_FILTERS)
 
 .PHONY: all clean test
 
 all: test
 
-$(TEST_BIN): $(TEST_SRC) $(MOTION_LOGIC_SRC)
-	@echo "Compiling client motion tests..."
-	$(CC) $(CFLAGS) -o $@ $(TEST_SRC) $(MOTION_LOGIC_SRC) $(LDFLAGS)
+$(TEST_MOTION): test_motion.c $(MOTION_LOGIC_SRC)
+	@echo "Compiling motion logic tests..."
+	$(CC) $(CFLAGS) -o $@ test_motion.c $(MOTION_LOGIC_SRC) $(LDFLAGS)
 
-test: $(TEST_BIN)
-	@echo "Running client motion tests..."
-	@./$(TEST_BIN)
+$(TEST_FILTERS): test_filters.c $(MOTION_LOGIC_SRC)
+	@echo "Compiling filter tests..."
+	$(CC) $(CFLAGS) -o $@ test_filters.c $(LDFLAGS)
+
+test: $(TESTS)
+	@echo "\n========================================="
+	@echo "Running all client tests..."
+	@echo "=========================================\n"
+	@echo "--- Motion Logic Tests ---"
+	@./$(TEST_MOTION)
+	@echo "\n--- Filter Tests ---"
+	@./$(TEST_FILTERS)
+	@echo "\n✓ All client tests completed successfully!"
 
 clean:
-	@rm -f $(TEST_BIN)
+	@rm -f $(TESTS)
+	@rm -rf *.dSYM
 	@echo "Cleaned client test artifacts"

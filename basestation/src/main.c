@@ -54,7 +54,8 @@ static struct bt_uuid_128 guitar_accel_char_uuid = BT_UUID_INIT_128(
 static const struct device *midi_uart;
 
 /* MIDI TX queue for interrupt-driven transmission */
-#define MIDI_TX_QUEUE_SIZE 256
+#define MIDI_TX_QUEUE_SIZE 16
+#define MIDI_TX_MAX_QUEUED 6  /* Don't write if more than this many bytes queued */
 static uint8_t midi_tx_queue[MIDI_TX_QUEUE_SIZE];
 static volatile size_t midi_tx_head = 0;
 static volatile size_t midi_tx_tail = 0;
@@ -117,15 +118,29 @@ static int queue_midi_bytes(const uint8_t *data, size_t len)
 		return -ENODEV;
 	}
 	
+	/* Calculate current queue depth */
+	size_t queued = (midi_tx_head >= midi_tx_tail) ? 
+		(midi_tx_head - midi_tx_tail) : 
+		(MIDI_TX_QUEUE_SIZE - midi_tx_tail + midi_tx_head);
+	
+	/* Check if queue is too full - reject entire write if so */
+	if (queued > MIDI_TX_MAX_QUEUED) {
+		LOG_WRN("MIDI TX queue too full (%d bytes), dropping message", queued);
+		return -ENOMEM;
+	}
+	
+	/* Check if there's enough space for the entire message */
+	size_t available = (MIDI_TX_QUEUE_SIZE - 1) - queued;
+	if (len > available) {
+		LOG_WRN("Not enough space in MIDI TX queue (%d available, %d needed), dropping message", 
+			available, len);
+		return -ENOMEM;
+	}
+	
 	/* Add bytes to queue */
 	for (size_t i = 0; i < len; i++) {
-		size_t next_head = (midi_tx_head + 1) % MIDI_TX_QUEUE_SIZE;
-		if (next_head == midi_tx_tail) {
-			LOG_WRN("MIDI TX queue full, dropping bytes");
-			return -ENOMEM;
-		}
 		midi_tx_queue[midi_tx_head] = data[i];
-		midi_tx_head = next_head;
+		midi_tx_head = (midi_tx_head + 1) % MIDI_TX_QUEUE_SIZE;
 	}
 	
 #if MIDI_DEBUG
@@ -939,11 +954,11 @@ int main(void)
 	LOG_INF("MIDI UART initialized (interrupt-driven)");
 
 	/* Initialize accelerometer to MIDI mapping configurations */
-	/* Based on captured data: X[-1027:-431], Y[-796:111], Z[61:-827] */
-	accel_mapping_init_linear(&x_axis_config, -1027, -431);
-	accel_mapping_init_linear(&y_axis_config, -796, 111);
-	accel_mapping_init_linear(&z_axis_config, 61, -827);
-	LOG_INF("Accel mapping: X[-1027:-431] Y[-796:111] Z[61:-827] -> MIDI[0:127]");
+	/* Based on captured data: X[837:935], Y[56:294], Z[223:665] */
+	accel_mapping_init_linear(&x_axis_config, 837, 935);
+	accel_mapping_init_linear(&y_axis_config, 56, 294);
+	accel_mapping_init_linear(&z_axis_config, 223, 665);
+	LOG_INF("Accel mapping: X[837:935] Y[56:294] Z[223:665] -> MIDI[0:127]");
 
 	bt_hogp_init(&hogp, &hogp_init_params);
 

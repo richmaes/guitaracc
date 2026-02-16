@@ -109,6 +109,7 @@ def run_automated_test(port):
         commands = [
             ("help", "Testing help command"),
             ("status", "Testing status command"),
+            ("config show", "Testing config show"),
             ("echo off", "Testing echo off"),
             ("echo on", "Testing echo on"),
             ("clear", "Testing clear screen"),
@@ -137,6 +138,64 @@ def run_automated_test(port):
         return False
     
     return True
+
+def write_factory_defaults(port):
+    """Write factory default configuration to device"""
+    print("Writing factory default configuration...")
+    print("-" * 50)
+    print("WARNING: This will overwrite the DEFAULT area in QSPI flash!")
+    print("This should only be done during manufacturing/setup.")
+    print("")
+    print("NOTE: Firmware must be built with CONFIG_CONFIG_ALLOW_DEFAULT_WRITE=y")
+    
+    confirm = input("Type 'YES' to continue: ")
+    if confirm != "YES":
+        print("Aborted.")
+        return False
+    
+    try:
+        ser = serial.Serial(
+            port=port,
+            baudrate=BAUD_RATE,
+            timeout=2,
+            rtscts=True
+        )
+        
+        # Wait for any startup messages
+        time.sleep(1)
+        ser.reset_input_buffer()
+        
+        print("\nStep 1: Unlocking DEFAULT area...")
+        ser.write(b"config unlock_default\r\n")
+        ser.flush()
+        time.sleep(0.5)
+        if ser.in_waiting:
+            response = ser.read(ser.in_waiting).decode('utf-8', errors='replace')
+            print(response)
+        
+        print("\nStep 2: Writing factory defaults...")
+        ser.write(b"config write_default\r\n")
+        ser.flush()
+        
+        # Read response
+        time.sleep(1)
+        if ser.in_waiting:
+            response = ser.read(ser.in_waiting).decode('utf-8', errors='replace')
+            print("Response:")
+            print(response)
+        else:
+            print("No response received")
+        
+        ser.close()
+        print("\n" + "-" * 50)
+        print("Factory defaults written successfully")
+        
+    except serial.SerialException as e:
+        print(f"Error: {e}")
+        return False
+    
+    return True
+
 
 def list_ports():
     """List available serial ports"""
@@ -183,12 +242,21 @@ def main():
         action='store_true',
         help='List available serial ports'
     )
+    parser.add_argument(
+        '-w', '--write-defaults',
+        action='store_true',
+        help='Write factory default configuration (WARNING: manufacturing only!)'
+    )
     
     args = parser.parse_args()
     
     if args.list:
         list_ports()
         return
+        
+    if args.write_defaults:
+        success = write_factory_defaults(args.port)
+        sys.exit(0 if success else 1)
         
     if args.test:
         success = run_automated_test(args.port)

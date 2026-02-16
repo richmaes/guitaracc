@@ -20,6 +20,7 @@
 #include "midi_logic.h"
 #include "ui_led.h"
 #include "ui_interface.h"
+#include "config_storage.h"
 
 LOG_MODULE_REGISTER(basestation, LOG_LEVEL_DBG);
 
@@ -78,6 +79,28 @@ static struct guitar_connection guitar_conn = {0};
 static struct accel_mapping_config x_axis_config;
 static struct accel_mapping_config y_axis_config;
 static struct accel_mapping_config z_axis_config;
+
+/* Current configuration */
+static struct config_data current_config;
+
+/* Configuration reload callback (defined in ui_interface.c) */
+extern void (*ui_config_reload_callback)(void);
+
+/* Reload configuration from storage */
+static void reload_config(void)
+{
+	int err = config_storage_load(&current_config);
+	if (err != 0) {
+		LOG_WRN("Config reload failed, using hardcoded defaults");
+		config_storage_get_hardcoded_defaults(&current_config);
+	} else {
+		LOG_INF("Config reloaded: MIDI ch=%d, CC=[%d,%d,%d]",
+			current_config.midi_channel + 1,
+			current_config.cc_mapping[0],
+			current_config.cc_mapping[1],
+			current_config.cc_mapping[2]);
+	}
+}
 
 /* UI UART ISR for command interface */
 static void ui_uart_isr(const struct device *dev, void *user_data)
@@ -197,10 +220,10 @@ static void process_accel_data(const struct accel_data *accel, int guitar_id)
 	cc_y = accel_to_midi_cc(accel->y, &y_axis_config);
 	cc_z = accel_to_midi_cc(accel->z, &z_axis_config);
 	
-	/* Send MIDI CC messages on channel 1 */
-	send_midi_cc(0, MIDI_CC_X_AXIS, cc_x);  /* Channel 1, CC 16 */
-	send_midi_cc(0, MIDI_CC_Y_AXIS, cc_y);  /* Channel 1, CC 17 */
-	send_midi_cc(0, MIDI_CC_Z_AXIS, cc_z);  /* Channel 1, CC 18 */
+	/* Send MIDI CC messages using configured channel and CC numbers */
+	send_midi_cc(current_config.midi_channel, current_config.cc_mapping[0], cc_x);
+	send_midi_cc(current_config.midi_channel, current_config.cc_mapping[1], cc_y);
+	send_midi_cc(current_config.midi_channel, current_config.cc_mapping[2], cc_z);
 	
 	/* Brief LED flash to indicate MIDI activity */
 	ui_led_flash(UI_LED_WHITE, 30);  /* 30ms white flash */
@@ -955,6 +978,27 @@ int main(void)
 
 	printk("Starting Bluetooth Central HIDS sample\n");
 
+	/* Initialize configuration storage */
+	err = config_storage_init();
+	if (err) {
+		LOG_ERR("Failed to initialize config storage (err %d)", err);
+		LOG_WRN("Continuing with hardcoded defaults...");
+	} else {
+		LOG_INF("Configuration storage initialized");
+		
+		/* Load configuration */
+		err = config_storage_load(&current_config);
+		if (err == 0) {
+			LOG_INF("Loaded config: MIDI ch=%d, CC=[%d,%d,%d]",
+				current_config.midi_channel + 1,
+				current_config.cc_mapping[0],
+				current_config.cc_mapping[1],
+				current_config.cc_mapping[2]);
+		} else {
+			/* Load hardcoded defaults if config load fails */
+			config_storage_get_hardcoded_defaults(&current_config);
+		}
+	} 
 	/* Initialize UI LED subsystem */
 	err = ui_led_init();
 	if (err) {
@@ -992,6 +1036,8 @@ int main(void)
 			LOG_ERR("Failed to initialize UI interface (err %d)", err);
 		} else {
 			LOG_INF("UI interface ready on VCOM0 at 115200 baud");
+			/* Set config reload callback */
+			ui_config_reload_callback = reload_config;
 		}
 	}
 

@@ -4,11 +4,13 @@
  */
 
 #include "ui_interface.h"
+#include "config_storage.h"
 #include <zephyr/sys/printk.h>
 #include <zephyr/logging/log.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 
 LOG_MODULE_REGISTER(ui_interface, LOG_LEVEL_DBG);
 
@@ -24,10 +26,14 @@ static bool echo_enabled = true;
 static int connected_devices = 0;
 static bool midi_output_active = false;
 
+/* Configuration reload callback */
+void (*ui_config_reload_callback)(void) = NULL;
+
 /* Forward declarations */
 static void cmd_help(void);
 static void cmd_status(void);
 static void cmd_echo(const char *args);
+static void cmd_config(const char *args);
 static void process_command(const char *cmd);
 static void print_prompt(void);
 
@@ -66,14 +72,29 @@ static void print_prompt(void)
 static void cmd_help(void)
 {
 	ui_print("\r\nAvailable commands:\r\n");
-	ui_print("  help    - Show this help message\r\n");
-	ui_print("  status  - Show system status\r\n");
-	ui_print("  echo    - Toggle echo mode (on/off)\r\n");
-	ui_print("  clear   - Clear screen\r\n");
+	ui_print("  help           - Show this help message\r\n");
+	ui_print("  status         - Show system status\r\n");
+	ui_print("  echo           - Toggle echo mode (on/off)\r\n");
+	ui_print("  clear          - Clear screen\r\n");
+	ui_print("  config show              - Show current configuration\r\n");
+	ui_print("  config save              - Save configuration to flash\r\n");
+	ui_print("  config restore           - Restore factory defaults\r\n");
+	ui_print("  config midi_ch <1-16>    - Set MIDI channel\r\n");
+	ui_print("  config cc <x|y|z> <0-127> - Set CC number for axis\r\n");
+	ui_print("  config unlock_default    - Unlock DEFAULT area (dev only!)\r\n");
+	ui_print("  config write_default     - Write factory default (requires unlock!)\r\n");
 }
 
 static void cmd_status(void)
 {
+	
+	/* Show config storage info */
+	enum config_area active_area;
+	uint32_t sequence;
+	if (config_storage_get_info(&active_area, &sequence) == 0) {
+		const char *area_name = (active_area == CONFIG_AREA_A) ? "A" : "B";
+		ui_print("Config area: %s (seq=%u)\r\n", area_name, sequence);
+	}
 	ui_print("\r\n=== GuitarAcc Basestation Status ===\r\n");
 	ui_print("Connected devices: %d\r\n", connected_devices);
 	ui_print("MIDI output: %s\r\n", midi_output_active ? "Active" : "Inactive");
@@ -104,6 +125,137 @@ static void cmd_clear(void)
 	ui_send_string("\033[2J\033[H");
 }
 
+static void cmd_config(const char *args)
+{
+	/* Skip leading spaces */
+	while (*args == ' ') {
+		args++;
+	}
+	
+	if (strncmp(args, "show", 4) == 0) {
+		struct config_data cfg;
+		if (config_storage_load(&cfg) == 0) {
+			ui_print("\r\n=== Configuration ===\r\n");
+			ui_print("MIDI:\r\n");
+			ui_print("  Channel: %d\r\n", cfg.midi_channel + 1);
+			ui_print("  Velocity curve: %d\r\n", cfg.velocity_curve);
+			ui_print("  CC mapping: [%d, %d, %d, %d, %d, %d]\r\n",
+				cfg.cc_mapping[0], cfg.cc_mapping[1], cfg.cc_mapping[2],
+				cfg.cc_mapping[3], cfg.cc_mapping[4], cfg.cc_mapping[5]);
+			ui_print("BLE:\r\n");
+			ui_print("  Max guitars: %d\r\n", cfg.max_guitars);
+			ui_print("  Scan interval: %d ms\r\n", cfg.scan_interval_ms);
+			ui_print("LED:\r\n");
+			ui_print("  Brightness: %d\r\n", cfg.led_brightness);
+			ui_print("  Mode: %d\r\n", cfg.led_mode);
+			ui_print("Accelerometer:\r\n");
+			ui_print("  Deadzone: %d\r\n", cfg.accel_deadzone);
+			ui_print("  Scale: [%d, %d, %d, %d, %d, %d]\r\n",
+				cfg.accel_scale[0], cfg.accel_scale[1], cfg.accel_scale[2],
+				cfg.accel_scale[3], cfg.accel_scale[4], cfg.accel_scale[5]);
+		} else {
+			ui_print("\r\nError loading configuration\r\n");
+		}
+	} else if (strncmp(args, "save", 4) == 0) {
+		struct config_data cfg;
+		if (config_storage_load(&cfg) == 0) {
+			if (config_storage_save(&cfg) == 0) {
+				ui_print("\r\nConfiguration saved to flash\r\n");
+			} else {
+				ui_print("\r\nError saving configuration\r\n");
+			}
+		}
+	} else if (strncmp(args, "restore", 7) == 0) {
+		if (config_storage_restore_defaults() == 0) {
+			ui_print("\r\nFactory defaults restored\r\n");
+		} else {
+			ui_print("\r\nError restoring defaults\r\n");
+		}
+	} else if (strncmp(args, "unlock_default", 14) == 0) {
+		if (config_storage_unlock_default_write() == 0) {
+			ui_print("\r\n*** DEFAULT AREA UNLOCKED ***\r\n");
+			ui_print("You can now use 'config write_default'\r\n");
+			ui_print("Lock will auto-reset after write\r\n");
+		} else {
+			ui_print("\r\nError: DEFAULT writes disabled at compile time\r\n");
+			ui_print("Enable CONFIG_CONFIG_ALLOW_DEFAULT_WRITE in prj.conf\r\n");
+		}
+	} else if (strncmp(args, "write_default", 13) == 0) {
+		ui_print("\r\nWARNING: Writing to factory default area!\r\n");
+		ui_print("This should only be done during manufacturing.\r\n");
+		
+		struct config_data cfg;
+		config_storage_get_hardcoded_defaults(&cfg);
+		
+		if (config_storage_write_default(&cfg) == 0) {
+			ui_print("Factory defaults written successfully\r\n");
+		} else {
+			ui_print("Error writing factory defaults\r\n");
+			ui_print("Use 'config unlock_default' first\r\n");
+		}
+	} else if (strncmp(args, "midi_ch", 7) == 0) {
+		/* Set MIDI channel: config midi_ch <1-16> */
+		int ch = atoi(args + 7);
+		if (ch >= 1 && ch <= 16) {
+			struct config_data cfg;
+			if (config_storage_load(&cfg) == 0) {
+				cfg.midi_channel = ch - 1;  /* 0-indexed internally */
+				int ret = config_storage_save(&cfg);
+				if (ret == 0) {
+					ui_print("\r\nMIDI channel set to %d\r\n", ch);
+					/* Trigger config reload */
+					if (ui_config_reload_callback) {
+						ui_config_reload_callback();
+					}
+				} else {
+					ui_print("\r\nError saving configuration (code: %d)\r\n", ret);
+				}
+			}
+		} else {
+			ui_print("\r\nInvalid channel (1-16)\r\n");
+		}
+	} else if (strncmp(args, "cc", 2) == 0) {
+		/* Set CC mapping: config cc <axis> <cc_num> */
+		/* axis: x=0, y=1, z=2, roll=3, pitch=4, yaw=5 */
+		const char *axis_str = args + 2;
+		while (*axis_str == ' ') axis_str++;
+		
+		int axis = -1;
+		if (*axis_str == 'x' || *axis_str == 'X') axis = 0;
+		else if (*axis_str == 'y' || *axis_str == 'Y') axis = 1;
+		else if (*axis_str == 'z' || *axis_str == 'Z') axis = 2;
+		
+		if (axis >= 0) {
+			axis_str++;
+			while (*axis_str == ' ') axis_str++;
+			int cc_num = atoi(axis_str);
+			
+			if (cc_num >= 0 && cc_num <= 127) {
+				struct config_data cfg;
+				if (config_storage_load(&cfg) == 0) {
+					cfg.cc_mapping[axis] = cc_num;
+					if (config_storage_save(&cfg) == 0) {
+						const char *axis_names[] = {"X", "Y", "Z", "Roll", "Pitch", "Yaw"};
+						ui_print("\r\n%s-axis CC set to %d\r\n", axis_names[axis], cc_num);
+						/* Trigger config reload */
+						if (ui_config_reload_callback) {
+							ui_config_reload_callback();
+						}
+					} else {
+						ui_print("\r\nError saving configuration\r\n");
+					}
+				}
+			} else {
+				ui_print("\r\nInvalid CC number (0-127)\r\n");
+			}
+		} else {
+			ui_print("\r\nUsage: config cc <x|y|z> <cc_num>\r\n");
+		}
+	} else {
+		ui_print("\r\nUsage: config show|save|restore|midi_ch|cc|unlock_default|write_default\r\n");
+	}
+}
+
 static void process_command(const char *cmd)
 {
 	/* Skip leading spaces */
@@ -130,6 +282,8 @@ static void process_command(const char *cmd)
 		cmd_echo(args);
 	} else if (strncmp(cmd, "clear", cmd_len) == 0 && cmd_len == 5) {
 		cmd_clear();
+	} else if (strncmp(cmd, "config", cmd_len) == 0 && cmd_len == 6) {
+		cmd_config(args);
 	} else {
 		ui_print("\r\nUnknown command: %.*s\r\n", cmd_len, cmd);
 		ui_print("Type 'help' for available commands\r\n");

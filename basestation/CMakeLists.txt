@@ -21,4 +21,5 @@ target_sources(app PRIVATE
     src/accel_mapping.c
     src/ui_led.c
     src/ui_interface.c
+    src/config_storage.c
 )

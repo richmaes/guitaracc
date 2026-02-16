@@ -29,9 +29,16 @@ The basestation provides a serial UART interface for user interaction, configura
 - **Function**: Text-based command interface with line editing
 - **Commands Available**:
   - `help` - Display available commands
-  - `status` - Show system status (connected devices, MIDI state)
+  - `status` - Show system status (connected devices, MIDI state, config area)
   - `echo on|off` - Toggle character echo mode
   - `clear` - Clear terminal screen (VT100)
+  - `config show` - Display current configuration
+  - `config save` - Save configuration to flash
+  - `config restore` - Restore factory defaults
+  - `config midi_ch <1-16>` - Set MIDI channel
+  - `config cc <x|y|z> <0-127>` - Set CC number for accelerometer axis
+  - `config unlock_default` - Unlock factory default area (development only)
+  - `config write_default` - Write factory defaults (requires unlock)
 
 ### Command Processing
 - Line buffering (128 character buffer)
@@ -172,6 +179,7 @@ A Python test tool is provided for testing and automation:
 - Hardware flow control support
 - Port discovery
 - Error handling
+- Factory default writer (`-w` option)
 
 ### Example Session
 ```
@@ -182,10 +190,17 @@ A Python test tool is provided for testing and automation:
 GuitarAcc> help
 
 Available commands:
-  help    - Show this help message
-  status  - Show system status
-  echo    - Toggle echo mode (on/off)
-  clear   - Clear screen
+  help                     - Show this help message
+  status                   - Show system status
+  echo                     - Toggle echo mode (on/off)
+  clear                    - Clear screen
+  config show              - Show current configuration
+  config save              - Save configuration to flash
+  config restore           - Restore factory defaults
+  config midi_ch <1-16>    - Set MIDI channel
+  config cc <x|y|z> <0-127> - Set CC number for axis
+  config unlock_default    - Unlock DEFAULT area (dev only!)
+  config write_default     - Write factory default (requires unlock!)
 
 GuitarAcc> status
 
@@ -193,46 +208,125 @@ GuitarAcc> status
 Connected devices: 1
 MIDI output: Active
 Echo mode: On
+Config area: A (seq=5)
+
+GuitarAcc> config show
+
+=== Configuration ===
+MIDI:
+  Channel: 1
+  Velocity curve: 0
+  CC mapping: [16, 17, 18, 19, 20, 21]
+BLE:
+  Max guitars: 4
+  Scan interval: 100 ms
+LED:
+  Brightness: 128
+  Mode: 0
+Accelerometer:
+  Deadzone: 100
+  Scale: [1000, 1000, 1000, 1000, 1000, 1000]
+
+GuitarAcc> config midi_ch 2
+
+MIDI channel set to 2
+
+GuitarAcc> config cc x 74
+
+X-axis CC set to 74
 
 GuitarAcc> 
 ```
+Configuration System
+
+### Runtime Configuration
+The basestation includes a complete configuration management system with persistent storage in internal flash. See [CONFIG_STORAGE.md](CONFIG_STORAGE.md) for details.
+
+**Features:**
+- MIDI channel configuration (1-16)
+- CC number mapping for each accelerometer axis
+- Persistent storage with redundancy (ping-pong areas)
+- SHA256 hash validation
+- Factory default area with write protection
+- Runtime reload (changes take effect immediately)
+
+**Default Configuration:**
+- MIDI Channel: 1
+- X-axis: CC 16 (General Purpose Controller 1)
+- Y-axis: CC 17 (General Purpose Controller 2)
+- Z-axis: CC 18 (General Purpose Controller 3)
+- Roll: CC 19, Pitch: CC 20, Yaw: CC 21
+
+### Configuration Commands
+
+**View Current Configuration:**
+```
+GuitarAcc> config show
+```
+
+**Set MIDI Channel:**
+```
+GuitarAcc> config midi_ch 5
+MIDI channel set to 5
+```
+
+**Set CC Number for Axis:**
+```
+GuitarAcc> config cc x 74    # Set X-axis to CC 74 (Brightness)
+X-axis CC set to 74
+
+GuitarAcc> config cc y 1     # Set Y-axis to CC 1 (Modulation)
+Y-axis CC set to 1
+
+GuitarAcc> config cc z 11    # Set Z-axis to CC 11 (Expression)
+Z-axis CC set to 11
+```
+
+**Save Configuration:**
+```
+GuitarAcc> config save
+Configuration saved to flash
+```
+*Note: Configuration is auto-saved when you change settings*
+CONFIG_STORAGE.md](CONFIG_STORAGE.md) - Configuration storage system details
+- [
+**Restore Factory Defaults:**
+```
+GuitarAcc> config restore
+Factory defaults restored
+```
+
+**Write Factory Defaults (Development Only):**
+```
+GuitarAcc> config unlock_default
+*** DEFAULT AREA UNLOCKED ***
+You can now use 'config write_default'
+Lock will auto-reset after write
+
+GuitarAcc> config write_default
+WARNING: Writing to factory default area!
+Factory defaults written successfully
+```
+*Note: Requires `CONFIG_CONFIG_ALLOW_DEFAULT_WRITE=y` in build*
 
 ## Future Enhancements
 
 ### Planned Features
-1. **Command Interface**
-   - Configuration commands (mapping ranges, MIDI channels)
-   - Status queries (connection state, device info)
-   - Runtime parameter adjustment
-
-2. **Status Output**
-   - Connection status notifications
-   - MIDI activity indicators
-   - Error reporting
-
-3. **Configuration Menu**
-   - Interactive configuration mode
-   - Save/load settings to flash
-   - Factory reset option
-
-4. **Debug Mode**
+1. **Debug Mode**
    - Real-time accelerometer value display
    - MIDI message monitoring
    - BLE connection statistics
 
-### Command Protocol (Future)
-Commands will likely follow a simple text-based format:
-```
-> help
-Available commands:
-  status  - Show system status
-  config  - Enter configuration mode
-  reset   - Reset to factory defaults
-  
-> status
-Basestation v1.0
-Connected devices: 1
-MIDI output: Active
+2. **Advanced Configuration**
+   - Accelerometer deadzone adjustment
+   - Scale/sensitivity per axis
+   - LED brightness and modes
+   - Velocity curve selection
+
+3. **Status Output**
+   - Connection status notifications
+   - MIDI activity indicators
+   - Enhanced error reportingI output: Active
 ```
 
 ## Pin Conflict Resolution

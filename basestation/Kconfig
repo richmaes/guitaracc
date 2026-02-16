@@ -1,4 +1,19 @@
 # Copyright (c) 2026 GuitarAcc Project
 # SPDX-License-Identifier: Apache-2.0
 
+menu "GuitarAcc Configuration"
+
+config CONFIG_ALLOW_DEFAULT_WRITE
+	bool "Allow writing to factory DEFAULT configuration area"
+	default n
+	help
+	  Enable this option to allow writing factory default configuration
+	  to the DEFAULT area in QSPI flash. This should only be enabled
+	  during development and manufacturing setup.
+	  
+	  WARNING: This must be disabled for production builds to prevent
+	  accidental overwrite of factory defaults.
+
+endmenu
+
 source "Kconfig.zephyr"

@@ -4,6 +4,7 @@
 
 - **[REFACTORING.md](REFACTORING.md)** - Code organization and host-based testing framework
 - **[MAPPING.md](MAPPING.md)** - Accelerometer to MIDI value mapping abstraction layer
+- **[UI_INTERFACE.md](UI_INTERFACE.md)** - Serial UI interface and configuration system
 
 ## Hardware Platform
 

@@ -19,6 +19,7 @@
 #include <zephyr/drivers/uart.h>
 #include "midi_logic.h"
 #include "ui_led.h"
+#include "ui_interface.h"
 
 LOG_MODULE_REGISTER(basestation, LOG_LEVEL_DBG);
 
@@ -77,6 +78,20 @@ static struct guitar_connection guitar_conn = {0};
 static struct accel_mapping_config x_axis_config;
 static struct accel_mapping_config y_axis_config;
 static struct accel_mapping_config z_axis_config;
+
+/* UI UART ISR for command interface */
+static void ui_uart_isr(const struct device *dev, void *user_data)
+{
+	uart_irq_update(dev);
+	
+	if (uart_irq_rx_ready(dev)) {
+		uint8_t byte;
+		while (uart_fifo_read(dev, &byte, 1) > 0) {
+			/* Process character through UI interface */
+			ui_interface_process_char((char)byte);
+		}
+	}
+}
 
 /* UART ISR for interrupt-driven MIDI transmission */
 static void uart_isr(const struct device *dev, void *user_data)
@@ -165,16 +180,6 @@ static void send_midi_cc(uint8_t channel, uint8_t cc_number, uint8_t value)
 	
 	/* Queue for interrupt-driven transmission */
 	queue_midi_bytes(midi_msg, 3);
-	
-	/* Test output on UI UART */
-	LOG_DBG("UI UART test: ui_uart=%p, ready=%d", 
-		ui_uart, ui_uart ? device_is_ready(ui_uart) : 0);
-	if (ui_uart && device_is_ready(ui_uart)) {
-		uart_poll_out(ui_uart, 'A');
-		LOG_DBG("UI UART: sent 'A'");
-	} else {
-		LOG_DBG("UI UART: not ready, skipped");
-	}
 	
 #if MIDI_DEBUG
 	LOG_DBG("MIDI CC ch=%d, cc=%d, val=%d", channel, cc_number, value);
@@ -481,6 +486,9 @@ static void connected(struct bt_conn *conn, uint8_t conn_err)
 	/* Update LED to show connected state */
 	ui_led_update_connection_count(1);
 	
+	/* Update UI interface status */
+	ui_interface_update_status(1, true);
+	
 #if BLE_DEBUG
 	LOG_INF("BLE: Guitar connected");
 #endif
@@ -517,6 +525,9 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 		
 		/* Update LED to show disconnected/scanning state */
 		ui_led_update_connection_count(0);
+		
+		/* Update UI interface status */
+		ui_interface_update_status(0, false);
 		
 #if BLE_DEBUG
 		LOG_INF("BLE: Guitar disconnected");
@@ -971,7 +982,17 @@ int main(void)
 	if (!device_is_ready(ui_uart)) {
 		LOG_WRN("UI UART device not ready - UI interface unavailable");
 	} else {
-		LOG_INF("UI UART initialized on VCOM0 at 115200 baud");
+		/* Set up RX interrupt for command interface */
+		uart_irq_callback_set(ui_uart, ui_uart_isr);
+		uart_irq_rx_enable(ui_uart);
+		
+		/* Initialize UI interface module */
+		err = ui_interface_init(ui_uart);
+		if (err) {
+			LOG_ERR("Failed to initialize UI interface (err %d)", err);
+		} else {
+			LOG_INF("UI interface ready on VCOM0 at 115200 baud");
+		}
 	}
 
 	/* Initialize accelerometer to MIDI mapping configurations */

@@ -57,6 +57,20 @@ void ui_get_midi_rx_stats(struct midi_rx_stats *stats);
 void ui_reset_midi_rx_stats(void);
 
 /**
+ * @brief Get current MIDI program number
+ * 
+ * @return Current program number (1 on power-up, updated by PC messages)
+ */
+uint8_t ui_get_current_program(void);
+
+/**
+ * @brief Set current MIDI program number
+ * 
+ * @param program Program number (0-127)
+ */
+void ui_set_current_program(uint8_t program);
+
+/**
  * @brief Send MIDI real-time message (high priority)
  * 
  * Real-time messages (0xF8-0xFF) are sent via priority queue

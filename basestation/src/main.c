@@ -78,6 +78,11 @@ static volatile size_t midi_rx_tail = 0;
 /* MIDI receive statistics (structure defined in ui_interface.h) */
 static struct midi_rx_stats rx_stats = {0};
 
+/* MIDI Program Change state */
+static uint8_t current_program = 1;  /* Default power-up program */
+static uint8_t midi_rx_state = 0;    /* 0=waiting for status, 1=waiting for PC data */
+static uint8_t midi_rx_status = 0;   /* Last status byte received */
+
 /* Guitar connection state */
 struct guitar_connection {
 	struct bt_conn *conn;
@@ -185,6 +190,24 @@ static void uart_isr(const struct device *dev, void *user_data)
 				rx_stats.stop_messages++;
 			} else if (byte >= 0xF0) {
 				rx_stats.other_messages++;
+			}
+			
+			/* Parse MIDI messages - Program Change detection */
+			if (byte >= 0x80 && byte < 0xF0) {
+				/* Status byte (channel voice message) */
+				midi_rx_status = byte;
+				if ((byte & 0xF0) == 0xC0) {
+					/* Program Change - expects 1 data byte */
+					midi_rx_state = 1;
+				} else {
+					/* Other message types - reset state */
+					midi_rx_state = 0;
+				}
+			} else if (byte < 0x80 && midi_rx_state == 1) {
+				/* Data byte for Program Change */
+				current_program = byte;
+				midi_rx_state = 0;
+				LOG_INF("MIDI PC: Program changed to %d", current_program);
 			}
 			
 			/* Forward real-time messages (0xF8-0xFF) to output via priority queue */
@@ -309,6 +332,23 @@ void ui_get_midi_rx_stats(struct midi_rx_stats *stats)
 void ui_reset_midi_rx_stats(void)
 {
 	memset(&rx_stats, 0, sizeof(rx_stats));
+}
+
+/* Get current MIDI program */
+uint8_t ui_get_current_program(void)
+{
+	return current_program;
+}
+
+/* Set current MIDI program */
+void ui_set_current_program(uint8_t program)
+{
+	if (program > 127) {
+		LOG_WRN("Invalid program number %d (max 127)", program);
+		return;
+	}
+	current_program = program;
+	LOG_INF("MIDI Program set to %d", current_program);
 }
 
 /* Send MIDI real-time message (single byte, high priority) */

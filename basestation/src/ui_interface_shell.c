@@ -275,6 +275,28 @@ static int cmd_midi_rx_reset(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+static int cmd_midi_program(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc == 1) {
+		/* No argument - show current program */
+		uint8_t program = ui_get_current_program();
+		shell_print(sh, "Current MIDI Program: %d", program);
+	} else {
+		/* Set program */
+		int program = atoi(argv[1]);
+		
+		if (program < 0 || program > 127) {
+			shell_error(sh, "Program must be 0-127");
+			return -1;
+		}
+		
+		ui_set_current_program((uint8_t)program);
+		shell_print(sh, "MIDI Program set to %d", program);
+	}
+	
+	return 0;
+}
+
 static int cmd_midi_send_rt(const struct shell *sh, size_t argc, char **argv)
 {
 	if (argc < 2) {
@@ -348,6 +370,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_config,
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_midi,
 	SHELL_CMD(rx_stats, NULL, "Show MIDI RX statistics", cmd_midi_rx_stats),
 	SHELL_CMD(rx_reset, NULL, "Reset MIDI RX statistics", cmd_midi_rx_reset),
+	SHELL_CMD_ARG(program, NULL, "Get/set MIDI program [0-127]", cmd_midi_program, 1, 1),
 	SHELL_CMD_ARG(send_rt, NULL, "Send MIDI real-time message <0xF8-0xFF>", cmd_midi_send_rt, 2, 0),
 	SHELL_SUBCMD_SET_END
 );

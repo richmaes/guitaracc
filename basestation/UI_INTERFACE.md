@@ -1,143 +1,128 @@
 # Basestation UI Interface
 
 ## Overview
-The basestation provides a serial UART interface for user interaction, configuration, and debugging. This interface is separate from the MIDI output and operates on UART1.
+The basestation provides a comprehensive command-line interface via **Zephyr Shell** over the USB VCOM port. This interface enables configuration management, system monitoring, and MIDI diagnostics.
 
-## Hardware Configuration
+## Implementation
 
-### UART1 - UI/Config Interface
-- **Port**: UART1 on Application Core
+### Zephyr Shell
+The UI is now implemented using the **Zephyr Shell** subsystem, which provides:
+- Advanced command parsing and tab completion
+- Command history with up/down arrow navigation
+- Hierarchical command structure
+- Integrated logging output
+- ANSI color support
+- Built-in help system
+
+### Hardware Configuration
+
+**USB VCOM Port:**
 - **Baud Rate**: 115200
-- **Physical Connection**: VCOM0 (USB Virtual COM Port)
-
-#### Pin Assignment
-| Function | Pin   | Direction |
-|----------|-------|-----------|
-| TX       | P1.05 | Output    |
-| RX       | P1.04 | Input     |
-| RTS      | P1.07 | Output    |
-| CTS      | P1.06 | Input     |
-
-#### Hardware Flow Control
-- Full hardware flow control (RTS/CTS) is enabled
-- Flow control pins are configured but may not be used by all terminal applications
+- **Settings**: 8N1, no flow control
+- **Port**: Typically `/dev/tty.usbmodem*` on macOS/Linux, `COMx` on Windows
 
 ## Current Features
 
-### Command Interface
-- **Status**: Active
-- **Function**: Text-based command interface with line editing
-- **Commands Available**:
-  - `help` - Display available commands
-  - `status` - Show system status (connected devices, MIDI state, config area)
-  - `echo on|off` - Toggle character echo mode
-  - `clear` - Clear terminal screen (VT100)
-  - `config show` - Display current configuration
-  - `config save` - Save configuration to flash
-  - `config restore` - Restore factory defaults
-  - `config midi_ch <1-16>` - Set MIDI channel
-  - `config cc <x|y|z> <0-127>` - Set CC number for accelerometer axis
-  - `config unlock_default` - Unlock factory default area (development only)
-  - `config write_default` - Write factory defaults (requires unlock)
+### Command Structure
 
-### Command Processing
-- Line buffering (128 character buffer)
-- Backspace/delete support
-- Echo mode (on by default)
-- Carriage return and newline handling
-- Command prompt: `GuitarAcc> `
+Commands are organized hierarchically using the Zephyr Shell:
 
-### Welcome Banner
-On connection, displays:
-```
-========================================
-  GuitarAcc Basestation v1.0
-  Type 'help' for available commands
-========================================
-GuitarAcc> 
-```
+#### Status Commands
+- `status` - Display system status (connected devices, MIDI output state, config area)
 
-## Device Tree Configuration
+#### Configuration Commands (`config` submenu)
+- `config show` - Display all current configuration values
+- `config save` - Save current configuration to flash
+- `config restore` - Restore factory default configuration
+- `config midi_ch <1-16>` - Set MIDI output channel
+- `config cc <x|y|z> <0-127>` - Set CC number for each accelerometer axis
+- `config unlock_default` - Unlock DEFAULT config area (development only)
+- `config write_default` - Write factory defaults (manufacturing only)
+- `config erase_all` - Erase all configuration (testing only)
 
-Location: `basestation/app.overlay`
+#### MIDI Commands (`midi` submenu)
+- `midi rx_stats` - Show MIDI receive statistics
+  - Total bytes received
+  - Clock messages (0xF8) with BPM calculation
+  - Start/Stop/Continue messages
+  - Other real-time messages
+- `midi rx_reset` - Reset MIDI receive statistics counters
+- `midi program [0-127]` - Get or set current MIDI program number
+- `midi send_rt <0xF8-0xFF>` - Send real-time MIDI message (Clock, Start, Stop, etc.)
 
-```dts
-&uart1 {
-    status = "okay";
-    current-speed = <115200>;
-    pinctrl-0 = <&uart1_default>;
-    pinctrl-1 = <&uart1_sleep>;
-    pinctrl-names = "default", "sleep";
-};
-```
+### Shell Features
+- **Tab Completion**: Press Tab to autocomplete commands and show available options
+- **Command History**: Use Up/Down arrows to recall previous commands
+- **Help System**: Type `help` or `<command> -h` for command information
+- **Subcommands**: Commands organized in logical groups
+- **Real-time Logging**: System logs displayed alongside command output
+- **Color Support**: Commands use ANSI colors for better readability
 
 ## Code Implementation
+
 ### Module Structure
-The UI interface is implemented as a separate module:
-- `src/ui_interface.h` - Public API
-- `src/ui_interface.c` - Command processing implementation
+The UI interface is implemented using Zephyr Shell:
+- `src/ui_interface.h` - Public API and data structures
+- `src/ui_interface_shell.c` - Shell command implementations
+- Integration with Zephyr Shell subsystem
 
 ### Public API
 ```c
 /* Initialize the UI interface */
-int ui_interface_init(const struct device *uart_dev);
+int ui_interface_init(void);
 
-/* Process incoming character (called from ISR) */
-void ui_interface_process_char(char c);
+/* Update connected devices count */
+void ui_set_connected_devices(int count);
 
-/* Print formatted message to UI */
-void ui_print(const char *fmt, ...);
+/* Update MIDI output active state */
+void ui_set_midi_output_active(bool active);
 
-/* Update system status */
-void ui_interface_update_status(int connected_count, bool midi_active);
+/* Get MIDI RX statistics */
+void ui_get_midi_rx_stats(struct midi_rx_stats *stats);
+
+/* Reset MIDI RX statistics */
+void ui_reset_midi_rx_stats(void);
+
+/* Get/Set current MIDI program */
+uint8_t ui_get_current_program(void);
+void ui_set_current_program(uint8_t program);
+
+/* Send real-time MIDI message */
+int send_midi_realtime(uint8_t rt_byte);
+
+/* Configuration reload callback */
+extern void (*ui_config_reload_callback)(void);
 ```
+
+### MIDI Statistics Structure
+```c
+struct midi_rx_stats {
+    uint32_t total_bytes;
+    uint32_t clock_messages;      /* 0xF8 MIDI Timing Clock */
+    uint32_t start_messages;      /* 0xFA MIDI Start */
+    uint32_t continue_messages;   /* 0xFB MIDI Continue */
+    uint32_t stop_messages;       /* 0xFC MIDI Stop */
+    uint32_t other_messages;
+    uint32_t last_clock_time;     /* Timestamp of last clock */
+    uint32_t clock_interval_us;   /* Interval in microseconds */
+};
+```
+
 ### Initialization
+The Zephyr Shell is automatically initialized by the Zephyr subsystem:
 ```c
-/* UI/Config UART device (UART1 on VCOM0) */
-static const struct device *ui_uart;
-
 /* In main() */
-ui_uart = DEVICE_DT_GET(DT_NODELABEL(uart1));
-if (!device_is_ready(ui_uart)) {
-    LOG_WRN("UI UART device not ready - UI interface unavailable");
+err = ui_interface_init();
+if (err) {
+    LOG_ERR("Failed to initialize UI interface (err %d)", err);
 } else {
-    /* Set up RX interrupt for command interface */
-    uart_irq_callback_set(ui_uart, ui_uart_isr);
-    uart_irq_rx_enable(ui_uart);
-    
-    /* Initialize UI interface module */
-    err = ui_interface_init(ui_uart);
-    if (err) {
-        LOG_ERR("Failed to initialize UI interface (err %d)", err);
-    }
+    LOG_INF("UI interface ready (Zephyr Shell)");
+    /* Set config reload callback */
+    ui_config_reload_callback = reload_config;
 }
 ```
 
-### Interrupt Handler
-```c
-static void ui_uart_isr(const struct device *dev, void *user_data)
-{
-    uart_irq_update(dev);
-    
-    if (uart_irq_rx_ready(dev)) {
-        uint8_t byte;
-        while (uart_fifo_read(dev, &byte, 1) > 0) {
-            /* Process character through UI interface */
-            ui_interface_process_char((char)byte);
-        }
-    }
-}
-```
-
-### Status Updates
-The system automatically updates status on connection changes:
-```c
-/* On device connection */
-ui_interface_update_status(1, true);
-
-/* On device disconnection */
-ui_interface_update_status(0, false);
-```
+No UART setup is required - Zephyr Shell uses the console backend configured in the device tree.
 
 ## Accessing the Interface
 
@@ -183,34 +168,19 @@ A Python test tool is provided for testing and automation:
 
 ### Example Session
 ```
-========================================
-  GuitarAcc Basestation v1.0
-  Type 'help' for available commands
-========================================
-GuitarAcc> help
+uart:~$ help
+Please press the <Tab> button to see all available commands.
+You can also use the <Tab> button to prompt or auto-complete all commands or its subcommands.
+You can try to call commands with <-h> or <--help> parameter for more information.
 
-Available commands:
-  help                     - Show this help message
-  status                   - Show system status
-  echo                     - Toggle echo mode (on/off)
-  clear                    - Clear screen
-  config show              - Show current configuration
-  config save              - Save configuration to flash
-  config restore           - Restore factory defaults
-  config midi_ch <1-16>    - Set MIDI channel
-  config cc <x|y|z> <0-127> - Set CC number for axis
-  config unlock_default    - Unlock DEFAULT area (dev only!)
-  config write_default     - Write factory default (requires unlock!)
-
-GuitarAcc> status
+uart:~$ status
+Config area: A (seq=1)
 
 === GuitarAcc Basestation Status ===
 Connected devices: 1
 MIDI output: Active
-Echo mode: On
-Config area: A (seq=5)
 
-GuitarAcc> config show
+uart:~$ config show
 
 === Configuration ===
 MIDI:
@@ -227,17 +197,65 @@ Accelerometer:
   Deadzone: 100
   Scale: [1000, 1000, 1000, 1000, 1000, 1000]
 
-GuitarAcc> config midi_ch 2
+uart:~$ midi rx_stats
 
+=== MIDI RX Statistics ===
+Total bytes received: 6162
+Clock messages (0xF8): 6162
+Clock interval: 28000 us (~89 BPM)
+Start messages (0xFA): 0
+Continue messages (0xFB): 0
+Stop messages (0xFC): 0
+Other messages: 0
+
+uart:~$ midi program
+Current MIDI Program: 1
+
+uart:~$ midi program 5
+MIDI Program set to 5
+
+uart:~$ config midi_ch 2
 MIDI channel set to 2
 
-GuitarAcc> config cc x 74
-
+uart:~$ config cc x 74
 X-axis CC set to 74
+uart:~$ config save
+Configuration saved to flash
 
-GuitarAcc> 
+uart:~$ 
 ```
-Configuration System
+
+### MIDI Monitoring
+
+The shell provides comprehensive MIDI diagnostics:
+
+**View Real-time Statistics:**
+```
+uart:~$ midi rx_stats
+=== MIDI RX Statistics ===
+Total bytes received: 12450
+Clock messages (0xF8): 12450
+Clock interval: 27777 us (~90 BPM)
+Start messages (0xFA): 1
+Continue messages (0xFB): 0
+Stop messages (0xFC): 1
+Other messages: 0
+```
+
+**Check Current Program:**
+```
+uart:~$ midi program
+Current MIDI Program: 42
+```
+
+**Send Test Messages:**
+```
+uart:~$ midi send_rt 0xFA
+Sent real-time message: 0xFA
+
+uart:~$ midi send_rt 0xF8
+Sent real-time message: 0xF8
+```
 
 ### Runtime Configuration
 The basestation includes a complete configuration management system with persistent storage in internal flash. See [CONFIG_STORAGE.md](CONFIG_STORAGE.md) for details.
@@ -312,32 +330,39 @@ Factory defaults written successfully
 ## Future Enhancements
 
 ### Planned Features
-1. **Debug Mode**
+1. **Extended MIDI Diagnostics**
+   - Message rate monitoring
+   - Jitter analysis for MIDI clock
+   - Full MIDI parser for all message types
+   - MIDI thru control (enable/disable)
+
+2. **Program-Based Features**
+   - Mapping profiles per program number
+   - Program-specific CC routing
+   - Effect parameter control
+   - Preset management
+
+3. **Advanced Configuration**
    - Real-time accelerometer value display
-   - MIDI message monitoring
+   - MIDI activity monitoring
    - BLE connection statistics
+   - Enhanced error reporting
 
-2. **Advanced Configuration**
-   - Accelerometer deadzone adjustment
-   - Scale/sensitivity per axis
-   - LED brightness and modes
-   - Velocity curve selection
+## Migration Notes
 
-3. **Status Output**
-   - Connection status notifications
-   - MIDI activity indicators
-   - Enhanced error reportingI output: Active
-```
+The UI system was migrated from a custom UART-based implementation to Zephyr Shell:
 
-## Pin Conflict Resolution
+**Benefits:**
+- Standard Zephyr subsystem (well-tested, maintained)
+- Rich feature set (tab completion, history, colors)
+- Easier to extend with new commands
+- Better integration with logging
+- No custom UART interrupt handling needed
 
-The UI interface pins (P1.04-P1.07) were carefully chosen to avoid conflicts:
-
-| Pin Range | Usage |
-|-----------|-------|
-| P1.04-P1.07 | UART1 UI Interface |
-| P1.08-P1.11 | UART0 MIDI Output |
-| P1.12-P1.15 | Network Core UART (forwarded via GPIO) |
+**Breaking Changes:**
+- Command prompt changed from `GuitarAcc>` to `uart:~$`
+- Welcome banner removed (standard Zephyr boot log shown)
+- Some command syntax may differ slightly
 
 ## Related Documentation
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture overview

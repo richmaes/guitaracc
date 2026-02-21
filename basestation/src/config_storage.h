@@ -48,16 +48,17 @@ struct config_header {
 } __packed;
 
 /**
- * @brief Configuration data structure
+ * @brief Global configuration structure
  * 
- * Add your configuration parameters here. This structure is stored
- * in QSPI flash and survives power cycles.
+ * System-level settings that apply across all patches.
+ * These settings are typically hardware or user preference related.
  */
-struct config_data {
-	/* MIDI mapping configuration */
+struct global_config {
+	/* Patch management */
+	uint8_t default_patch;         /* Active patch index (0-126) */
+	
+	/* MIDI configuration */
 	uint8_t midi_channel;          /* MIDI channel (0-15) */
-	uint8_t velocity_curve;        /* Velocity curve type (0-3) */
-	uint8_t cc_mapping[6];         /* CC numbers for 6 axes */
 	
 	/* BLE configuration */
 	uint8_t max_guitars;           /* Maximum connected guitars (1-4) */
@@ -65,14 +66,57 @@ struct config_data {
 	
 	/* LED configuration */
 	uint8_t led_brightness;        /* LED brightness (0-255) */
+	
+	/* Accelerometer mapping */
+	int16_t accel_scale[6];        /* Scaling factors for each axis */
+	
+	/* Filter configuration */
+	uint8_t running_average_enable; /* Enable running average filter (0/1) */
+	uint8_t running_average_depth;  /* Running average depth (3-10) */
+	
+	/* Reserved for future global settings */
+	uint8_t reserved[33];          /* Future expansion (33 bytes for 4-byte alignment) */
+} __packed;
+
+/**
+ * @brief Patch configuration structure
+ * 
+ * Patch-specific settings that can vary between different
+ * performances, songs, or sound designs.
+ */
+struct patch_config {
+	/* MIDI mapping configuration */
+	uint8_t velocity_curve;        /* Velocity curve type (0-3) */
+	uint8_t cc_mapping[6];         /* CC numbers for 6 axes */
+	
+	/* LED configuration */
 	uint8_t led_mode;              /* LED mode (0-3) */
 	
 	/* Accelerometer mapping */
 	int16_t accel_deadzone;        /* Deadzone threshold */
-	int16_t accel_scale[6];        /* Scaling factors for each axis */
+	
+	/* Patch metadata */
+	char patch_name[32];           /* Patch name (null-terminated) */
+	
+	/* Reserved for future patch settings */
+	uint8_t reserved[66];          /* Future expansion (66 bytes for 4-byte alignment) */
+} __packed;
+
+/**
+ * @brief Combined configuration data structure
+ * 
+ * Contains both global and patch-specific settings.
+ * This structure is stored in flash and survives power cycles.
+ * 
+ * NOTE: Supports up to 127 patches. The active patch is selected
+ * via global.default_patch index.
+ */
+struct config_data {
+	struct global_config global;   /* Global system settings */
+	struct patch_config patches[127]; /* Array of 127 patches */
 	
 	/* Reserved for future use */
-	uint8_t reserved[130];         /* Padded to 156 bytes for 4-byte alignment */
+	uint8_t reserved[32];          /* Additional expansion space */
 } __packed;
 
 /* Compile-time assertion: nRF5340 flash requires 4-byte aligned writes */

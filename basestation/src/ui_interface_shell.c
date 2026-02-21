@@ -49,7 +49,7 @@ static int cmd_config_show(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 	
-	struct config_data cfg;
+	static struct config_data cfg;
 	
 	if (config_storage_load(&cfg) != 0) {
 		shell_error(sh, "Error loading configuration");
@@ -57,23 +57,38 @@ static int cmd_config_show(const struct shell *sh, size_t argc, char **argv)
 	}
 	
 	shell_print(sh, "\n=== Configuration ===");
+	
+	shell_print(sh, "\n--- GLOBAL SETTINGS ---");
+	shell_print(sh, "Active patch: %d", cfg.global.default_patch);
 	shell_print(sh, "MIDI:");
-	shell_print(sh, "  Channel: %d", cfg.midi_channel + 1);
-	shell_print(sh, "  Velocity curve: %d", cfg.velocity_curve);
-	shell_print(sh, "  CC mapping: [%d, %d, %d, %d, %d, %d]",
-		cfg.cc_mapping[0], cfg.cc_mapping[1], cfg.cc_mapping[2],
-		cfg.cc_mapping[3], cfg.cc_mapping[4], cfg.cc_mapping[5]);
+	shell_print(sh, "  Channel: %d", cfg.global.midi_channel + 1);
 	shell_print(sh, "BLE:");
-	shell_print(sh, "  Max guitars: %d", cfg.max_guitars);
-	shell_print(sh, "  Scan interval: %d ms", cfg.scan_interval_ms);
+	shell_print(sh, "  Max guitars: %d", cfg.global.max_guitars);
+	shell_print(sh, "  Scan interval: %d ms", cfg.global.scan_interval_ms);
 	shell_print(sh, "LED:");
-	shell_print(sh, "  Brightness: %d", cfg.led_brightness);
-	shell_print(sh, "  Mode: %d", cfg.led_mode);
+	shell_print(sh, "  Brightness: %d", cfg.global.led_brightness);
 	shell_print(sh, "Accelerometer:");
-	shell_print(sh, "  Deadzone: %d", cfg.accel_deadzone);
 	shell_print(sh, "  Scale: [%d, %d, %d, %d, %d, %d]",
-		cfg.accel_scale[0], cfg.accel_scale[1], cfg.accel_scale[2],
-		cfg.accel_scale[3], cfg.accel_scale[4], cfg.accel_scale[5]);
+		cfg.global.accel_scale[0], cfg.global.accel_scale[1], cfg.global.accel_scale[2],
+		cfg.global.accel_scale[3], cfg.global.accel_scale[4], cfg.global.accel_scale[5]);
+	shell_print(sh, "Filters:");
+	shell_print(sh, "  Running average: %s", cfg.global.running_average_enable ? "Enabled" : "Disabled");
+	shell_print(sh, "  Average depth: %d samples", cfg.global.running_average_depth);
+	
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= 127) patch_idx = 0;
+	
+	shell_print(sh, "\n--- PATCH SETTINGS (Patch %d) ---", patch_idx);
+	shell_print(sh, "Name: %s", cfg.patches[patch_idx].patch_name);
+	shell_print(sh, "MIDI:");
+	shell_print(sh, "  Velocity curve: %d", cfg.patches[patch_idx].velocity_curve);
+	shell_print(sh, "  CC mapping: [%d, %d, %d, %d, %d, %d]",
+		cfg.patches[patch_idx].cc_mapping[0], cfg.patches[patch_idx].cc_mapping[1], cfg.patches[patch_idx].cc_mapping[2],
+		cfg.patches[patch_idx].cc_mapping[3], cfg.patches[patch_idx].cc_mapping[4], cfg.patches[patch_idx].cc_mapping[5]);
+	shell_print(sh, "LED:");
+	shell_print(sh, "  Mode: %d", cfg.patches[patch_idx].led_mode);
+	shell_print(sh, "Accelerometer:");
+	shell_print(sh, "  Deadzone: %d", cfg.patches[patch_idx].accel_deadzone);
 	
 	return 0;
 }
@@ -83,7 +98,7 @@ static int cmd_config_save(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 	
-	struct config_data cfg;
+	static struct config_data cfg;
 	
 	if (config_storage_load(&cfg) != 0) {
 		shell_error(sh, "Error loading configuration");
@@ -126,13 +141,13 @@ static int cmd_config_midi_ch(const struct shell *sh, size_t argc, char **argv)
 		return -1;
 	}
 	
-	struct config_data cfg;
+	static struct config_data cfg;
 	if (config_storage_load(&cfg) != 0) {
 		shell_error(sh, "Error loading configuration");
 		return -1;
 	}
 	
-	cfg.midi_channel = ch - 1;  /* 0-indexed internally */
+	cfg.global.midi_channel = ch - 1;  /* 0-indexed internally */
 	
 	int ret = config_storage_save(&cfg);
 	if (ret != 0) {
@@ -140,7 +155,7 @@ static int cmd_config_midi_ch(const struct shell *sh, size_t argc, char **argv)
 		return -1;
 	}
 	
-	shell_print(sh, "MIDI channel set to %d", ch);
+	shell_print(sh, "MIDI channel set to %d (global setting)", ch);
 	
 	/* Trigger config reload */
 	if (ui_config_reload_callback) {
@@ -172,13 +187,16 @@ static int cmd_config_cc(const struct shell *sh, size_t argc, char **argv)
 		return -1;
 	}
 	
-	struct config_data cfg;
+	static struct config_data cfg;
 	if (config_storage_load(&cfg) != 0) {
 		shell_error(sh, "Error loading configuration");
 		return -1;
 	}
 	
-	cfg.cc_mapping[axis] = cc_num;
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= 127) patch_idx = 0;
+	
+	cfg.patches[patch_idx].cc_mapping[axis] = cc_num;
 	
 	if (config_storage_save(&cfg) != 0) {
 		shell_error(sh, "Error saving configuration");
@@ -186,7 +204,115 @@ static int cmd_config_cc(const struct shell *sh, size_t argc, char **argv)
 	}
 	
 	const char *axis_names[] = {"X", "Y", "Z"};
-	shell_print(sh, "%s-axis CC set to %d", axis_names[axis], cc_num);
+	shell_print(sh, "%s-axis CC set to %d (patch %d setting)", axis_names[axis], cc_num, patch_idx);
+	
+	/* Trigger config reload */
+	if (ui_config_reload_callback) {
+		ui_config_reload_callback();
+	}
+	
+	return 0;
+}
+
+static int cmd_config_scan_interval(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc != 2) {
+		shell_error(sh, "Usage: config scan_interval <10-1000>");
+		return -1;
+	}
+	
+	int interval = atoi(argv[1]);
+	if (interval < 10 || interval > 1000) {
+		shell_error(sh, "Invalid interval (10-1000 ms)");
+		return -1;
+	}
+	
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	cfg.global.scan_interval_ms = (uint8_t)interval;
+	
+	if (config_storage_save(&cfg) != 0) {
+		shell_error(sh, "Error saving configuration");
+		return -1;
+	}
+	
+	shell_print(sh, "BLE scan interval set to %d ms (global setting)", interval);
+	
+	/* Trigger config reload */
+	if (ui_config_reload_callback) {
+		ui_config_reload_callback();
+	}
+	
+	return 0;
+}
+
+static int cmd_config_avg_enable(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc != 2) {
+		shell_error(sh, "Usage: config avg_enable <0|1>");
+		return -1;
+	}
+	
+	int enable = atoi(argv[1]);
+	if (enable != 0 && enable != 1) {
+		shell_error(sh, "Invalid value (0=disable, 1=enable)");
+		return -1;
+	}
+	
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	cfg.global.running_average_enable = (uint8_t)enable;
+	
+	if (config_storage_save(&cfg) != 0) {
+		shell_error(sh, "Error saving configuration");
+		return -1;
+	}
+	
+	shell_print(sh, "Running average %s (global setting)", enable ? "enabled" : "disabled");
+	
+	/* Trigger config reload */
+	if (ui_config_reload_callback) {
+		ui_config_reload_callback();
+	}
+	
+	return 0;
+}
+
+static int cmd_config_avg_depth(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc != 2) {
+		shell_error(sh, "Usage: config avg_depth <3-10>");
+		return -1;
+	}
+	
+	int depth = atoi(argv[1]);
+	if (depth < 3 || depth > 10) {
+		shell_error(sh, "Invalid depth (3-10 samples)");
+		return -1;
+	}
+	
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	cfg.global.running_average_depth = (uint8_t)depth;
+	
+	if (config_storage_save(&cfg) != 0) {
+		shell_error(sh, "Error saving configuration");
+		return -1;
+	}
+	
+	shell_print(sh, "Running average depth set to %d samples (global setting)", depth);
 	
 	/* Trigger config reload */
 	if (ui_config_reload_callback) {
@@ -222,7 +348,7 @@ static int cmd_config_write_default(const struct shell *sh, size_t argc, char **
 	shell_warn(sh, "WARNING: Writing to factory default area!");
 	shell_warn(sh, "This should only be done during manufacturing.");
 	
-	struct config_data cfg;
+	static struct config_data cfg;
 	config_storage_get_hardcoded_defaults(&cfg);
 	
 	if (config_storage_write_default(&cfg) != 0) {
@@ -329,6 +455,111 @@ static int cmd_midi_send_rt(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+static int cmd_config_patch(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc != 2) {
+		shell_error(sh, "Usage: config patch <0-126>");
+		return -1;
+	}
+	
+	int patch_num = atoi(argv[1]);
+	if (patch_num < 0 || patch_num > 126) {
+		shell_error(sh, "Invalid patch number (0-126)");
+		return -1;
+	}
+	
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	uint8_t patch_idx = (uint8_t)patch_num;
+	bool is_active = (patch_idx == cfg.global.default_patch);
+	
+	shell_print(sh, "\n--- PATCH %d%s ---", patch_idx, is_active ? " (ACTIVE)" : "");
+	shell_print(sh, "Name: %s", cfg.patches[patch_idx].patch_name);
+	shell_print(sh, "MIDI:");
+	shell_print(sh, "  Velocity curve: %d", cfg.patches[patch_idx].velocity_curve);
+	shell_print(sh, "  CC mapping: [%d, %d, %d, %d, %d, %d]",
+		cfg.patches[patch_idx].cc_mapping[0], cfg.patches[patch_idx].cc_mapping[1],
+		cfg.patches[patch_idx].cc_mapping[2], cfg.patches[patch_idx].cc_mapping[3],
+		cfg.patches[patch_idx].cc_mapping[4], cfg.patches[patch_idx].cc_mapping[5]);
+	shell_print(sh, "LED:");
+	shell_print(sh, "  Mode: %d", cfg.patches[patch_idx].led_mode);
+	shell_print(sh, "Accelerometer:");
+	shell_print(sh, "  Deadzone: %d", cfg.patches[patch_idx].accel_deadzone);
+	
+	return 0;
+}
+
+static int cmd_config_select_patch(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc != 2) {
+		shell_error(sh, "Usage: config select <0-126>");
+		return -1;
+	}
+	
+	int patch_num = atoi(argv[1]);
+	if (patch_num < 0 || patch_num > 126) {
+		shell_error(sh, "Invalid patch number (0-126)");
+		return -1;
+	}
+	
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	cfg.global.default_patch = (uint8_t)patch_num;
+	
+	if (config_storage_save(&cfg) != 0) {
+		shell_error(sh, "Error saving configuration");
+		return -1;
+	}
+	
+	shell_print(sh, "Active patch changed to %d (%s)", 
+		    patch_num, cfg.patches[patch_num].patch_name);
+	
+	/* Trigger config reload */
+	if (ui_config_reload_callback) {
+		ui_config_reload_callback();
+	}
+	
+	return 0;
+}
+
+static int cmd_config_list_patches(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	uint8_t active = cfg.global.default_patch;
+	
+	shell_print(sh, "\n=== Patches (0-126) ===");
+	shell_print(sh, "Active patch: %d\n", active);
+	
+	/* Show first 10 patches as a sample */
+	for (int i = 0; i < 10; i++) {
+		shell_print(sh, "%c %3d: %s",
+			    (i == active) ? '*' : ' ',
+			    i,
+			    cfg.patches[i].patch_name);
+	}
+	
+	shell_print(sh, "  ...  (use 'config patch <num>' to view specific patch)");
+	shell_print(sh, "\nUse 'config select <num>' to change active patch");
+	
+	return 0;
+}
+
 static int cmd_config_erase_all(const struct shell *sh, size_t argc, char **argv)
 {
 	ARG_UNUSED(argc);
@@ -359,8 +590,14 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_config,
 	SHELL_CMD(show, NULL, "Show current configuration", cmd_config_show),
 	SHELL_CMD(save, NULL, "Save configuration to flash", cmd_config_save),
 	SHELL_CMD(restore, NULL, "Restore factory defaults", cmd_config_restore),
+	SHELL_CMD_ARG(patch, NULL, "Show specific patch <0-126>", cmd_config_patch, 2, 0),
+	SHELL_CMD_ARG(select, NULL, "Select active patch <0-126>", cmd_config_select_patch, 2, 0),
+	SHELL_CMD(list, NULL, "List patches", cmd_config_list_patches),
 	SHELL_CMD_ARG(midi_ch, NULL, "Set MIDI channel <1-16>", cmd_config_midi_ch, 2, 0),
 	SHELL_CMD_ARG(cc, NULL, "Set CC mapping <x|y|z> <0-127>", cmd_config_cc, 3, 0),
+	SHELL_CMD_ARG(scan_interval, NULL, "Set BLE scan interval <10-1000> ms", cmd_config_scan_interval, 2, 0),
+	SHELL_CMD_ARG(avg_enable, NULL, "Enable running average <0|1>", cmd_config_avg_enable, 2, 0),
+	SHELL_CMD_ARG(avg_depth, NULL, "Set average depth <3-10> samples", cmd_config_avg_depth, 2, 0),
 	SHELL_CMD(unlock_default, NULL, "Unlock DEFAULT area (dev only)", cmd_config_unlock_default),
 	SHELL_CMD(write_default, NULL, "Write factory defaults (mfg only)", cmd_config_write_default),
 	SHELL_CMD(erase_all, NULL, "Erase all config (testing only)", cmd_config_erase_all),

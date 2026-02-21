@@ -133,31 +133,46 @@ static void cmd_config(const char *args)
 	}
 	
 	if (strncmp(args, "show", 4) == 0) {
-		struct config_data cfg;
+		static struct config_data cfg;
 		if (config_storage_load(&cfg) == 0) {
 			ui_print("\r\n=== Configuration ===\r\n");
+			
+			ui_print("\r\n--- GLOBAL SETTINGS ---\r\n");
+			ui_print("Active patch: %d\r\n", cfg.global.default_patch);
 			ui_print("MIDI:\r\n");
-			ui_print("  Channel: %d\r\n", cfg.midi_channel + 1);
-			ui_print("  Velocity curve: %d\r\n", cfg.velocity_curve);
-			ui_print("  CC mapping: [%d, %d, %d, %d, %d, %d]\r\n",
-				cfg.cc_mapping[0], cfg.cc_mapping[1], cfg.cc_mapping[2],
-				cfg.cc_mapping[3], cfg.cc_mapping[4], cfg.cc_mapping[5]);
+			ui_print("  Channel: %d\r\n", cfg.global.midi_channel + 1);
 			ui_print("BLE:\r\n");
-			ui_print("  Max guitars: %d\r\n", cfg.max_guitars);
-			ui_print("  Scan interval: %d ms\r\n", cfg.scan_interval_ms);
+			ui_print("  Max guitars: %d\r\n", cfg.global.max_guitars);
+			ui_print("  Scan interval: %d ms\r\n", cfg.global.scan_interval_ms);
 			ui_print("LED:\r\n");
-			ui_print("  Brightness: %d\r\n", cfg.led_brightness);
-			ui_print("  Mode: %d\r\n", cfg.led_mode);
+			ui_print("  Brightness: %d\r\n", cfg.global.led_brightness);
 			ui_print("Accelerometer:\r\n");
-			ui_print("  Deadzone: %d\r\n", cfg.accel_deadzone);
 			ui_print("  Scale: [%d, %d, %d, %d, %d, %d]\r\n",
-				cfg.accel_scale[0], cfg.accel_scale[1], cfg.accel_scale[2],
-				cfg.accel_scale[3], cfg.accel_scale[4], cfg.accel_scale[5]);
+				cfg.global.accel_scale[0], cfg.global.accel_scale[1], cfg.global.accel_scale[2],
+				cfg.global.accel_scale[3], cfg.global.accel_scale[4], cfg.global.accel_scale[5]);
+			ui_print("Filters:\r\n");
+			ui_print("  Running average: %s\r\n", cfg.global.running_average_enable ? "Enabled" : "Disabled");
+			ui_print("  Average depth: %d samples\r\n", cfg.global.running_average_depth);
+			
+			uint8_t patch_idx = cfg.global.default_patch;
+			if (patch_idx >= 127) patch_idx = 0;
+			
+			ui_print("\r\n--- PATCH SETTINGS (Patch %d) ---\r\n", patch_idx);
+			ui_print("Name: %s\r\n", cfg.patches[patch_idx].patch_name);
+			ui_print("MIDI:\r\n");
+			ui_print("  Velocity curve: %d\r\n", cfg.patches[patch_idx].velocity_curve);
+			ui_print("  CC mapping: [%d, %d, %d, %d, %d, %d]\r\n",
+				cfg.patches[patch_idx].cc_mapping[0], cfg.patches[patch_idx].cc_mapping[1], cfg.patches[patch_idx].cc_mapping[2],
+				cfg.patches[patch_idx].cc_mapping[3], cfg.patches[patch_idx].cc_mapping[4], cfg.patches[patch_idx].cc_mapping[5]);
+			ui_print("LED:\r\n");
+			ui_print("  Mode: %d\r\n", cfg.patches[patch_idx].led_mode);
+			ui_print("Accelerometer:\r\n");
+			ui_print("  Deadzone: %d\r\n", cfg.patches[patch_idx].accel_deadzone);
 		} else {
 			ui_print("\r\nError loading configuration\r\n");
 		}
 	} else if (strncmp(args, "save", 4) == 0) {
-		struct config_data cfg;
+		static struct config_data cfg;
 		if (config_storage_load(&cfg) == 0) {
 			if (config_storage_save(&cfg) == 0) {
 				ui_print("\r\nConfiguration saved to flash\r\n");
@@ -184,7 +199,7 @@ static void cmd_config(const char *args)
 		ui_print("\r\nWARNING: Writing to factory default area!\r\n");
 		ui_print("This should only be done during manufacturing.\r\n");
 		
-		struct config_data cfg;
+		static struct config_data cfg;
 		config_storage_get_hardcoded_defaults(&cfg);
 		
 		if (config_storage_write_default(&cfg) == 0) {
@@ -197,12 +212,12 @@ static void cmd_config(const char *args)
 		/* Set MIDI channel: config midi_ch <1-16> */
 		int ch = atoi(args + 7);
 		if (ch >= 1 && ch <= 16) {
-			struct config_data cfg;
+			static struct config_data cfg;
 			if (config_storage_load(&cfg) == 0) {
-				cfg.midi_channel = ch - 1;  /* 0-indexed internally */
+				cfg.global.midi_channel = ch - 1;  /* 0-indexed internally */
 				int ret = config_storage_save(&cfg);
 				if (ret == 0) {
-					ui_print("\r\nMIDI channel set to %d\r\n", ch);
+					ui_print("\r\nMIDI channel set to %d (global setting)\r\n", ch);
 					/* Trigger config reload */
 					if (ui_config_reload_callback) {
 						ui_config_reload_callback();
@@ -231,12 +246,15 @@ static void cmd_config(const char *args)
 			int cc_num = atoi(axis_str);
 			
 			if (cc_num >= 0 && cc_num <= 127) {
-				struct config_data cfg;
+				static struct config_data cfg;
 				if (config_storage_load(&cfg) == 0) {
-					cfg.cc_mapping[axis] = cc_num;
+					uint8_t patch_idx = cfg.global.default_patch;
+					if (patch_idx >= 127) patch_idx = 0;
+					
+					cfg.patches[patch_idx].cc_mapping[axis] = cc_num;
 					if (config_storage_save(&cfg) == 0) {
 						const char *axis_names[] = {"X", "Y", "Z", "Roll", "Pitch", "Yaw"};
-						ui_print("\r\n%s-axis CC set to %d\r\n", axis_names[axis], cc_num);
+						ui_print("\r\n%s-axis CC set to %d (patch %d setting)\r\n", axis_names[axis], cc_num, patch_idx);
 						/* Trigger config reload */
 						if (ui_config_reload_callback) {
 							ui_config_reload_callback();

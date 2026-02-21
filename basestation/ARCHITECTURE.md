@@ -98,12 +98,17 @@ The GuitarAcc system consists of two main applications:
 - **Device Tree**: Pin configuration overridden in app.overlay
 
 #### Interrupt-Driven UART Implementation
-The UART uses **interrupt-driven transmission** for non-blocking MIDI output:
+The UART uses **interrupt-driven transmission** for non-blocking MIDI output with priority queue support:
 
-- **Circular TX Queue**: 256-byte buffer for pending MIDI messages
+- **Dual Queue Architecture**:
+  - **Priority Queue**: 8-byte buffer for real-time MIDI messages (0xF8-0xFF)
+  - **Regular Queue**: 16-byte buffer for standard MIDI messages (Control Change, etc.)
 - **ISR Handler**: `uart_isr()` automatically sends queued bytes when FIFO is ready
-- **Non-blocking**: `queue_midi_bytes()` returns immediately after queuing data
-- **RX Disabled**: Only TX interrupts enabled (MIDI output only)
+  - Always services priority queue first
+  - Falls back to regular queue when priority queue is empty
+- **Non-blocking**: `queue_midi_bytes()` and `queue_midi_rt_bytes()` return immediately
+- **MIDI Receive**: RX interrupts enabled for bidirectional MIDI communication
+- **MIDI Thru**: Real-time messages (0xF8-0xFF) automatically forwarded from input to output
 
 **Important Notes:**
 - nRF UART driver does **not** support `uart_configure()` (returns -ENOSYS)
@@ -113,11 +118,21 @@ The UART uses **interrupt-driven transmission** for non-blocking MIDI output:
 - Main code continues execution while UART transmits in background
 
 **Queue Operation:**
-1. Application calls `queue_midi_bytes(data, len)` with MIDI message
-2. Bytes added to circular buffer (`midi_tx_queue[]`)
-3. TX interrupt enabled via `uart_irq_tx_enable()`
-4. ISR fires when FIFO ready, sends one byte at a time
-5. When queue empty, ISR disables TX interrupt
+1. Application calls `queue_midi_bytes(data, len)` for regular messages
+2. Or calls `queue_midi_rt_bytes(data, len)` / `send_midi_realtime(byte)` for priority
+3. Bytes added to appropriate circular buffer
+4. TX interrupt enabled via `uart_irq_tx_enable()`
+5. ISR fires when FIFO ready:
+   - Checks priority queue first
+   - Sends from regular queue if priority is empty
+6. When both queues empty, ISR disables TX interrupt
+
+**MIDI Receive Features:**
+- RX interrupts process incoming MIDI data in real-time
+- Statistics tracking for all real-time messages (Clock, Start, Stop, etc.)
+- Program Change message detection and state tracking
+- Automatic forwarding of real-time messages to output (MIDI thru)
+- BPM calculation from MIDI Clock intervals
 
 ### Bluetooth Configuration
 - **Role**: Central (scans and connects to guitars)
@@ -270,7 +285,19 @@ The system uses a configurable abstraction layer to translate accelerometer data
 - **Protocol**: MIDI 1.0
 - **Connection**: 5-pin DIN or USB-MIDI
 - **Baud**: 31250 (MIDI standard)
-- **Message Types**: Note ON, Note OFF, Control Change (TBD)
+- **Message Types**: 
+  - Control Change (CC) for accelerometer data
+  - Real-time messages (Clock, Start, Stop, etc.)
+- **MIDI Thru**: Real-time messages received on MIDI IN are forwarded to MIDI OUT
+
+### MIDI Program Change State
+- **Default Program**: 1 (set on power-up)
+- **Program Range**: 0-127 (MIDI standard)
+- **State Management**: 
+  - Automatically updated when PC messages received on MIDI IN
+  - Can be queried or set via shell command: `midi program [0-127]`
+  - Logged to console when changed
+- **Future Use**: Program number will control mapping profiles, effects, or routing
 
 ## Development Workflow
 
@@ -280,6 +307,75 @@ The system uses a configurable abstraction layer to translate accelerometer data
 4. **Monitor**: VCOM0 at 115200 baud (test mode)
 
 ## User Interface (UI)
+
+### Shell-Based Command Interface
+
+The basestation provides a comprehensive command-line interface via **Zephyr Shell** over the USB VCOM port (115200 baud). The shell provides access to configuration, status monitoring, and MIDI diagnostics.
+
+#### Available Commands
+
+**Status Commands:**
+- `status` - Display system status (connected devices, MIDI output state, config area)
+
+**Configuration Commands:**
+- `config show` - Display all current configuration values
+- `config save` - Save current configuration to flash
+- `config restore` - Restore factory default configuration
+- `config midi_ch <1-16>` - Set MIDI output channel
+- `config cc <x|y|z> <0-127>` - Set CC number for each axis
+- `config unlock_default` - Unlock DEFAULT config area (development only)
+- `config write_default` - Write factory defaults (manufacturing only)
+- `config erase_all` - Erase all configuration (testing only)
+
+**MIDI Commands:**
+- `midi rx_stats` - Show MIDI receive statistics (bytes, clock messages, BPM, etc.)
+- `midi rx_reset` - Reset MIDI receive statistics counters
+- `midi program [0-127]` - Get or set current MIDI program number
+- `midi send_rt <0xF8-0xFF>` - Send real-time MIDI message (Clock, Start, Stop, etc.)
+
+#### Shell Features
+- **Tab Completion**: Press Tab to autocomplete commands and show options
+- **Command History**: Use Up/Down arrows to recall previous commands
+- **Real-time Logging**: System logs displayed alongside command output
+- **Color Support**: Commands use ANSI colors for better readability
+
+#### Connection
+- **Port**: USB VCOM (typically `/dev/tty.usbmodem*` on macOS)
+- **Baud Rate**: 115200
+- **Settings**: 8N1, no flow control
+- **Terminal**: Any serial terminal (screen, minicom, pyserial, etc.)
+
+#### Usage Example
+```bash
+# Connect via serial terminal
+screen /dev/tty.usbmodem0010501494421 115200
+
+# Check system status
+uart:~$ status
+Config area: A (seq=1)
+=== GuitarAcc Basestation Status ===
+Connected devices: 1
+MIDI output: Active
+
+# View MIDI receive statistics
+uart:~$ midi rx_stats
+=== MIDI RX Statistics ===
+Total bytes received: 6162
+Clock messages (0xF8): 6162
+Clock interval: 28000 us (~89 BPM)
+Start messages (0xFA): 0
+Continue messages (0xFB): 0
+Stop messages (0xFC): 0
+Other messages: 0
+
+# Check current program
+uart:~$ midi program
+Current MIDI Program: 1
+
+# Change MIDI channel
+uart:~$ config midi_ch 2
+MIDI channel set to 2
+```
 
 ### RGB LED Status Indicators
 

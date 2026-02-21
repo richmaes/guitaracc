@@ -249,28 +249,31 @@ void config_storage_get_hardcoded_defaults(struct config_data *data)
 {
 	memset(data, 0, sizeof(*data));
 	
-	/* MIDI defaults */
-	data->midi_channel = 0;  /* Channel 1 (0-indexed) */
-	data->velocity_curve = 0; /* Linear */
-	data->cc_mapping[0] = 16;  /* CC16: General Purpose 1 (X-axis) */
-	data->cc_mapping[1] = 17;  /* CC17: General Purpose 2 (Y-axis) */
-	data->cc_mapping[2] = 18;  /* CC18: General Purpose 3 (Z-axis) */
-	data->cc_mapping[3] = 19;  /* CC19: General Purpose 4 (Roll) */
-	data->cc_mapping[4] = 20;  /* CC20: General Purpose 5 (Pitch) */
-	data->cc_mapping[5] = 21;  /* CC21: General Purpose 6 (Yaw) */
-	
-	/* BLE defaults */
-	data->max_guitars = 4;
-	data->scan_interval_ms = 100;
-	
-	/* LED defaults */
-	data->led_brightness = 128;  /* 50% brightness */
-	data->led_mode = 0;          /* Normal mode */
-	
-	/* Accelerometer defaults */
-	data->accel_deadzone = 100;  /* 100 units */
+	/* Global defaults */
+	data->global.default_patch = 0;  /* Default to patch 0 */
+	data->global.midi_channel = 0;  /* Channel 1 (0-indexed) */
+	data->global.max_guitars = 4;
+	data->global.scan_interval_ms = 100;
+	data->global.led_brightness = 128;  /* 50% brightness */
 	for (int i = 0; i < 6; i++) {
-		data->accel_scale[i] = 1000;  /* 1.0x scale (fixed point) */
+		data->global.accel_scale[i] = 1000;  /* 1.0x scale (fixed point) */
+	}
+	data->global.running_average_enable = 1;  /* Enabled */
+	data->global.running_average_depth = 5;   /* 5 samples */
+	
+	/* Initialize all patches with defaults */
+	for (int p = 0; p < 127; p++) {
+		data->patches[p].velocity_curve = 0; /* Linear */
+		data->patches[p].cc_mapping[0] = 16;  /* CC16: General Purpose 1 (X-axis) */
+		data->patches[p].cc_mapping[1] = 17;  /* CC17: General Purpose 2 (Y-axis) */
+		data->patches[p].cc_mapping[2] = 18;  /* CC18: General Purpose 3 (Z-axis) */
+		data->patches[p].cc_mapping[3] = 19;  /* CC19: General Purpose 4 (Roll) */
+		data->patches[p].cc_mapping[4] = 20;  /* CC20: General Purpose 5 (Pitch) */
+		data->patches[p].cc_mapping[5] = 21;  /* CC21: General Purpose 6 (Yaw) */
+		data->patches[p].led_mode = 0;          /* Normal mode */
+		data->patches[p].accel_deadzone = 100;  /* 100 units */
+		snprintf(data->patches[p].patch_name, sizeof(data->patches[p].patch_name), 
+		         "Patch %d", p);
 	}
 }
 
@@ -307,8 +310,8 @@ int config_storage_init(void)
 		CONFIG_DEFAULT_OFFSET, CONFIG_AREA_A_OFFSET, CONFIG_AREA_B_OFFSET);
 	
 	/* Try to read from both active areas */
-	struct config_header header_a, header_b;
-	struct config_data data_a, data_b;
+	static struct config_header header_a, header_b;
+	static struct config_data data_a, data_b;
 	
 	int ret_a = read_area(CONFIG_AREA_A, &header_a, &data_a);
 	int ret_b = read_area(CONFIG_AREA_B, &header_b, &data_b);
@@ -341,8 +344,8 @@ int config_storage_init(void)
 		LOG_INF("Using area B (seq=%u, A invalid)", current_sequence);
 	} else {
 		/* Neither valid - try DEFAULT area */
-		struct config_header header_default;
-		struct config_data data_default;
+		static struct config_header header_default;
+		static struct config_data data_default;
 		
 		int ret_default = read_area(CONFIG_AREA_DEFAULT, &header_default,
 					     &data_default);
@@ -436,8 +439,8 @@ int config_storage_restore_defaults(void)
 		return -EACCES;
 	}
 	
-	struct config_header header;
-	struct config_data data;
+	static struct config_header header;
+	static struct config_data data;
 	
 	/* Try to read from DEFAULT area */
 	int ret = read_area(CONFIG_AREA_DEFAULT, &header, &data);

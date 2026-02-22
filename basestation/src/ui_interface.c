@@ -81,8 +81,6 @@ static void cmd_help(void)
 	ui_print("  config restore           - Restore factory defaults\r\n");
 	ui_print("  config midi_ch <1-16>    - Set MIDI channel\r\n");
 	ui_print("  config cc <x|y|z> <0-127> - Set CC number for axis\r\n");
-	ui_print("  config unlock_default    - Unlock DEFAULT area (dev only!)\r\n");
-	ui_print("  config write_default     - Write factory default (requires unlock!)\r\n");
 }
 
 static void cmd_status(void)
@@ -168,6 +166,15 @@ static void cmd_config(const char *args)
 			ui_print("  Mode: %d\r\n", cfg.patches[patch_idx].led_mode);
 			ui_print("Accelerometer:\r\n");
 			ui_print("  Deadzone: %d\r\n", cfg.patches[patch_idx].accel_deadzone);
+			ui_print("  Min CC: [%d, %d, %d, %d, %d, %d]\r\n",
+				cfg.patches[patch_idx].accel_min[0], cfg.patches[patch_idx].accel_min[1],
+				cfg.patches[patch_idx].accel_min[2], cfg.patches[patch_idx].accel_min[3],
+				cfg.patches[patch_idx].accel_min[4], cfg.patches[patch_idx].accel_min[5]);
+			ui_print("  Max CC: [%d, %d, %d, %d, %d, %d]\r\n",
+				cfg.patches[patch_idx].accel_max[0], cfg.patches[patch_idx].accel_max[1],
+				cfg.patches[patch_idx].accel_max[2], cfg.patches[patch_idx].accel_max[3],
+				cfg.patches[patch_idx].accel_max[4], cfg.patches[patch_idx].accel_max[5]);
+			ui_print("  Invert: 0x%02X\r\n", cfg.patches[patch_idx].accel_invert);
 		} else {
 			ui_print("\r\nError loading configuration\r\n");
 		}
@@ -185,28 +192,6 @@ static void cmd_config(const char *args)
 			ui_print("\r\nFactory defaults restored\r\n");
 		} else {
 			ui_print("\r\nError restoring defaults\r\n");
-		}
-	} else if (strncmp(args, "unlock_default", 14) == 0) {
-		if (config_storage_unlock_default_write() == 0) {
-			ui_print("\r\n*** DEFAULT AREA UNLOCKED ***\r\n");
-			ui_print("You can now use 'config write_default'\r\n");
-			ui_print("Lock will auto-reset after write\r\n");
-		} else {
-			ui_print("\r\nError: DEFAULT writes disabled at compile time\r\n");
-			ui_print("Enable CONFIG_CONFIG_ALLOW_DEFAULT_WRITE in prj.conf\r\n");
-		}
-	} else if (strncmp(args, "write_default", 13) == 0) {
-		ui_print("\r\nWARNING: Writing to factory default area!\r\n");
-		ui_print("This should only be done during manufacturing.\r\n");
-		
-		static struct config_data cfg;
-		config_storage_get_hardcoded_defaults(&cfg);
-		
-		if (config_storage_write_default(&cfg) == 0) {
-			ui_print("Factory defaults written successfully\r\n");
-		} else {
-			ui_print("Error writing factory defaults\r\n");
-			ui_print("Use 'config unlock_default' first\r\n");
 		}
 	} else if (strncmp(args, "midi_ch", 7) == 0) {
 		/* Set MIDI channel: config midi_ch <1-16> */

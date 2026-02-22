@@ -94,12 +94,15 @@ struct patch_config {
 	
 	/* Accelerometer mapping */
 	int16_t accel_deadzone;        /* Deadzone threshold */
+	uint8_t accel_min[6];          /* Minimum CC value for each axis (0-127) */
+	uint8_t accel_max[6];          /* Maximum CC value for each axis (0-127) */
+	uint8_t accel_invert;          /* Inversion bitfield: bit 0-5 for axes 0-5 */
 	
 	/* Patch metadata */
 	char patch_name[32];           /* Patch name (null-terminated) */
 	
 	/* Reserved for future patch settings */
-	uint8_t reserved[66];          /* Future expansion (66 bytes for 4-byte alignment) */
+	uint8_t reserved[53];          /* Future expansion (53 bytes for 4-byte alignment) */
 } __packed;
 
 /**
@@ -127,9 +130,8 @@ BUILD_ASSERT(sizeof(struct config_data) % 4 == 0,
  * @brief Storage area identifiers
  */
 enum config_area {
-	CONFIG_AREA_DEFAULT = 0,  /* Factory default (read-only) */
-	CONFIG_AREA_A = 1,        /* Active storage A */
-	CONFIG_AREA_B = 2,        /* Active storage B */
+	CONFIG_AREA_A = 0,        /* Active storage A */
+	CONFIG_AREA_B = 1,        /* Active storage B */
 };
 
 /**
@@ -167,27 +169,14 @@ int config_storage_load(struct config_data *data);
 /**
  * @brief Restore factory default configuration
  * 
- * Loads configuration from DEFAULT area and saves it to active storage.
+ * Loads hardcoded default configuration and saves it to active storage.
  * 
  * @return 0 on success, negative errno on failure
  */
 int config_storage_restore_defaults(void);
 
 /**
- * @brief Write factory default configuration (test application only)
- * 
- * Writes configuration to the DEFAULT area. This should only be called
- * from the test application during manufacturing/setup.
- * 
- * WARNING: This function should NOT be called from normal application code.
- * 
- * @param data Pointer to factory default configuration
- * @return 0 on success, negative errno on failure
- */
-int config_storage_write_default(const struct config_data *data);
-
-/**
- * @brief Get statistics about configuration storage
+ * @brief Erase all configuration storage areas (testing only)
  * 
  * Returns information about sequence numbers, active area, and validation
  * status for debugging purposes.
@@ -197,30 +186,6 @@ int config_storage_write_default(const struct config_data *data);
  * @return 0 on success, negative errno on failure
  */
 int config_storage_get_info(enum config_area *active_area, uint32_t *sequence);
-
-/**
- * @brief Unlock DEFAULT area for writing (development/manufacturing only)
- * 
- * This function must be called before config_storage_write_default() will
- * succeed. It provides runtime protection against accidental DEFAULT writes.
- * The unlock is automatically cleared after a successful write.
- * 
- * Requirements:
- * - CONFIG_CONFIG_ALLOW_DEFAULT_WRITE must be enabled at compile time
- * - This function must be called immediately before write_default()
- * 
- * WARNING: Only use during development and manufacturing setup!
- * 
- * @return 0 on success, -EPERM if compile-time option disabled, -EACCES if not initialized
- */
-int config_storage_unlock_default_write(void);
-
-/**
- * @brief Check if DEFAULT area writes are currently enabled
- * 
- * @return true if DEFAULT writes are unlocked and compile-time enabled, false otherwise
- */
-bool config_storage_is_default_write_enabled(void);
 
 /**
  * @brief Erase all configuration storage areas (testing only)

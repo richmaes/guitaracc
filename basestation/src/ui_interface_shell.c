@@ -89,6 +89,15 @@ static int cmd_config_show(const struct shell *sh, size_t argc, char **argv)
 	shell_print(sh, "  Mode: %d", cfg.patches[patch_idx].led_mode);
 	shell_print(sh, "Accelerometer:");
 	shell_print(sh, "  Deadzone: %d", cfg.patches[patch_idx].accel_deadzone);
+	shell_print(sh, "  Min CC: [%d, %d, %d, %d, %d, %d]",
+		cfg.patches[patch_idx].accel_min[0], cfg.patches[patch_idx].accel_min[1],
+		cfg.patches[patch_idx].accel_min[2], cfg.patches[patch_idx].accel_min[3],
+		cfg.patches[patch_idx].accel_min[4], cfg.patches[patch_idx].accel_min[5]);
+	shell_print(sh, "  Max CC: [%d, %d, %d, %d, %d, %d]",
+		cfg.patches[patch_idx].accel_max[0], cfg.patches[patch_idx].accel_max[1],
+		cfg.patches[patch_idx].accel_max[2], cfg.patches[patch_idx].accel_max[3],
+		cfg.patches[patch_idx].accel_max[4], cfg.patches[patch_idx].accel_max[5]);
+	shell_print(sh, "  Invert: 0x%02X", cfg.patches[patch_idx].accel_invert);
 	
 	return 0;
 }
@@ -214,6 +223,142 @@ static int cmd_config_cc(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+static int cmd_config_accel_min(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc != 3) {
+		shell_error(sh, "Usage: config accel_min <0-5> <0-127>");
+		return -1;
+	}
+	
+	int axis = atoi(argv[1]);
+	if (axis < 0 || axis > 5) {
+		shell_error(sh, "Invalid axis (0-5)");
+		return -1;
+	}
+	
+	int value = atoi(argv[2]);
+	if (value < 0 || value > 127) {
+		shell_error(sh, "Invalid value (0-127)");
+		return -1;
+	}
+	
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= 127) patch_idx = 0;
+	
+	cfg.patches[patch_idx].accel_min[axis] = (uint8_t)value;
+	
+	if (config_storage_save(&cfg) != 0) {
+		shell_error(sh, "Error saving configuration");
+		return -1;
+	}
+	
+	shell_print(sh, "Axis %d min CC set to %d (patch %d)", axis, value, patch_idx);
+	
+	if (ui_config_reload_callback) {
+		ui_config_reload_callback();
+	}
+	
+	return 0;
+}
+
+static int cmd_config_accel_max(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc != 3) {
+		shell_error(sh, "Usage: config accel_max <0-5> <0-127>");
+		return -1;
+	}
+	
+	int axis = atoi(argv[1]);
+	if (axis < 0 || axis > 5) {
+		shell_error(sh, "Invalid axis (0-5)");
+		return -1;
+	}
+	
+	int value = atoi(argv[2]);
+	if (value < 0 || value > 127) {
+		shell_error(sh, "Invalid value (0-127)");
+		return -1;
+	}
+	
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= 127) patch_idx = 0;
+	
+	cfg.patches[patch_idx].accel_max[axis] = (uint8_t)value;
+	
+	if (config_storage_save(&cfg) != 0) {
+		shell_error(sh, "Error saving configuration");
+		return -1;
+	}
+	
+	shell_print(sh, "Axis %d max CC set to %d (patch %d)", axis, value, patch_idx);
+	
+	if (ui_config_reload_callback) {
+		ui_config_reload_callback();
+	}
+	
+	return 0;
+}
+
+static int cmd_config_accel_invert(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc != 3) {
+		shell_error(sh, "Usage: config accel_invert <0-5> <0|1>");
+		return -1;
+	}
+	
+	int axis = atoi(argv[1]);
+	if (axis < 0 || axis > 5) {
+		shell_error(sh, "Invalid axis (0-5)");
+		return -1;
+	}
+	
+	int invert = atoi(argv[2]);
+	if (invert != 0 && invert != 1) {
+		shell_error(sh, "Invalid value (0=normal, 1=invert)");
+		return -1;
+	}
+	
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= 127) patch_idx = 0;
+	
+	if (invert) {
+		cfg.patches[patch_idx].accel_invert |= (1 << axis);
+	} else {
+		cfg.patches[patch_idx].accel_invert &= ~(1 << axis);
+	}
+	
+	if (config_storage_save(&cfg) != 0) {
+		shell_error(sh, "Error saving configuration");
+		return -1;
+	}
+	
+	shell_print(sh, "Axis %d invert set to %s (patch %d)", axis, invert ? "ON" : "OFF", patch_idx);
+	
+	if (ui_config_reload_callback) {
+		ui_config_reload_callback();
+	}
+	
+	return 0;
+}
+
 static int cmd_config_scan_interval(const struct shell *sh, size_t argc, char **argv)
 {
 	if (argc != 2) {
@@ -319,45 +464,6 @@ static int cmd_config_avg_depth(const struct shell *sh, size_t argc, char **argv
 		ui_config_reload_callback();
 	}
 	
-	return 0;
-}
-
-static int cmd_config_unlock_default(const struct shell *sh, size_t argc, char **argv)
-{
-	ARG_UNUSED(argc);
-	ARG_UNUSED(argv);
-	
-	if (config_storage_unlock_default_write() != 0) {
-		shell_error(sh, "DEFAULT writes disabled at compile time");
-		shell_error(sh, "Enable CONFIG_CONFIG_ALLOW_DEFAULT_WRITE in prj.conf");
-		return -1;
-	}
-	
-	shell_warn(sh, "*** DEFAULT AREA UNLOCKED ***");
-	shell_print(sh, "You can now use 'config write_default'");
-	shell_print(sh, "Lock will auto-reset after write");
-	
-	return 0;
-}
-
-static int cmd_config_write_default(const struct shell *sh, size_t argc, char **argv)
-{
-	ARG_UNUSED(argc);
-	ARG_UNUSED(argv);
-	
-	shell_warn(sh, "WARNING: Writing to factory default area!");
-	shell_warn(sh, "This should only be done during manufacturing.");
-	
-	static struct config_data cfg;
-	config_storage_get_hardcoded_defaults(&cfg);
-	
-	if (config_storage_write_default(&cfg) != 0) {
-		shell_error(sh, "Error writing factory defaults");
-		shell_error(sh, "Use 'config unlock_default' first");
-		return -1;
-	}
-	
-	shell_print(sh, "Factory defaults written successfully");
 	return 0;
 }
 
@@ -489,6 +595,15 @@ static int cmd_config_patch(const struct shell *sh, size_t argc, char **argv)
 	shell_print(sh, "  Mode: %d", cfg.patches[patch_idx].led_mode);
 	shell_print(sh, "Accelerometer:");
 	shell_print(sh, "  Deadzone: %d", cfg.patches[patch_idx].accel_deadzone);
+	shell_print(sh, "  Min CC: [%d, %d, %d, %d, %d, %d]",
+		cfg.patches[patch_idx].accel_min[0], cfg.patches[patch_idx].accel_min[1],
+		cfg.patches[patch_idx].accel_min[2], cfg.patches[patch_idx].accel_min[3],
+		cfg.patches[patch_idx].accel_min[4], cfg.patches[patch_idx].accel_min[5]);
+	shell_print(sh, "  Max CC: [%d, %d, %d, %d, %d, %d]",
+		cfg.patches[patch_idx].accel_max[0], cfg.patches[patch_idx].accel_max[1],
+		cfg.patches[patch_idx].accel_max[2], cfg.patches[patch_idx].accel_max[3],
+		cfg.patches[patch_idx].accel_max[4], cfg.patches[patch_idx].accel_max[5]);
+	shell_print(sh, "  Invert: 0x%02X", cfg.patches[patch_idx].accel_invert);
 	
 	return 0;
 }
@@ -566,7 +681,7 @@ static int cmd_config_erase_all(const struct shell *sh, size_t argc, char **argv
 	ARG_UNUSED(argv);
 	
 	shell_warn(sh, "*** WARNING: ERASE ALL CONFIGURATION STORAGE ***");
-	shell_warn(sh, "This will erase DEFAULT, AREA_A, and AREA_B");
+	shell_warn(sh, "This will erase AREA_A and AREA_B");
 	shell_warn(sh, "Device will use hardcoded defaults on next boot");
 	shell_warn(sh, "This command is for TESTING ONLY!");
 	
@@ -595,11 +710,12 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_config,
 	SHELL_CMD(list, NULL, "List patches", cmd_config_list_patches),
 	SHELL_CMD_ARG(midi_ch, NULL, "Set MIDI channel <1-16>", cmd_config_midi_ch, 2, 0),
 	SHELL_CMD_ARG(cc, NULL, "Set CC mapping <x|y|z> <0-127>", cmd_config_cc, 3, 0),
+	SHELL_CMD_ARG(accel_min, NULL, "Set axis min CC <0-5> <0-127>", cmd_config_accel_min, 3, 0),
+	SHELL_CMD_ARG(accel_max, NULL, "Set axis max CC <0-5> <0-127>", cmd_config_accel_max, 3, 0),
+	SHELL_CMD_ARG(accel_invert, NULL, "Invert axis <0-5> <0|1>", cmd_config_accel_invert, 3, 0),
 	SHELL_CMD_ARG(scan_interval, NULL, "Set BLE scan interval <10-1000> ms", cmd_config_scan_interval, 2, 0),
 	SHELL_CMD_ARG(avg_enable, NULL, "Enable running average <0|1>", cmd_config_avg_enable, 2, 0),
 	SHELL_CMD_ARG(avg_depth, NULL, "Set average depth <3-10> samples", cmd_config_avg_depth, 2, 0),
-	SHELL_CMD(unlock_default, NULL, "Unlock DEFAULT area (dev only)", cmd_config_unlock_default),
-	SHELL_CMD(write_default, NULL, "Write factory defaults (mfg only)", cmd_config_write_default),
 	SHELL_CMD(erase_all, NULL, "Erase all config (testing only)", cmd_config_erase_all),
 	SHELL_SUBCMD_SET_END
 );

@@ -111,12 +111,12 @@ struct patch_config {
  * Contains both global and patch-specific settings.
  * This structure is stored in flash and survives power cycles.
  * 
- * NOTE: Supports up to 127 patches. The active patch is selected
+ * NOTE: Supports up to 16 patches. The active patch is selected
  * via global.default_patch index.
  */
 struct config_data {
 	struct global_config global;   /* Global system settings */
-	struct patch_config patches[127]; /* Array of 127 patches */
+	struct patch_config patches[16]; /* Array of 16 patches */
 	
 	/* Reserved for future use */
 	uint8_t reserved[32];          /* Additional expansion space */

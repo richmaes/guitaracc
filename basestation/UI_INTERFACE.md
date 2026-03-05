@@ -34,11 +34,22 @@ Commands are organized hierarchically using the Zephyr Shell:
 - `config show` - Display all current configuration values
 - `config save` - Save current configuration to flash
 - `config restore` - Restore factory default configuration
+- `config patch <0-15>` - Show specific patch configuration
+- `config select <0-15>` - Select active patch
+- `config list` - List all patches
 - `config midi_ch <1-16>` - Set MIDI output channel
 - `config cc <x|y|z> <0-127>` - Set CC number for each accelerometer axis
-- `config unlock_default` - Unlock DEFAULT config area (development only)
-- `config write_default` - Write factory defaults (manufacturing only)
+- `config accel_min <0-5> <0-127>` - Set minimum CC value for axis
+- `config accel_max <0-5> <0-127>` - Set maximum CC value for axis
+- `config accel_invert <0-5> <0|1>` - Enable/disable axis inversion
+- `config scan_interval <10-1000>` - Set BLE scan interval in ms
+- `config avg_enable <0|1>` - Enable/disable running average filter
+- `config avg_depth <3-10>` - Set running average depth
 - `config erase_all` - Erase all configuration (testing only)
+
+**TODO:**
+- Add `config velocity_curve <0-10>` command to set velocity curve per patch
+- Add getter/setter commands for additional patch parameters as needed
 
 #### MIDI Commands (`midi` submenu)
 - `midi rx_stats` - Show MIDI receive statistics

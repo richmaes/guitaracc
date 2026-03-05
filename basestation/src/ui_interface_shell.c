@@ -76,7 +76,7 @@ static int cmd_config_show(const struct shell *sh, size_t argc, char **argv)
 	shell_print(sh, "  Average depth: %d samples", cfg.global.running_average_depth);
 	
 	uint8_t patch_idx = cfg.global.default_patch;
-	if (patch_idx >= 127) patch_idx = 0;
+	if (patch_idx >= 16) patch_idx = 0;
 	
 	shell_print(sh, "\n--- PATCH SETTINGS (Patch %d) ---", patch_idx);
 	shell_print(sh, "Name: %s", cfg.patches[patch_idx].patch_name);
@@ -203,7 +203,7 @@ static int cmd_config_cc(const struct shell *sh, size_t argc, char **argv)
 	}
 	
 	uint8_t patch_idx = cfg.global.default_patch;
-	if (patch_idx >= 127) patch_idx = 0;
+	if (patch_idx >= 16) patch_idx = 0;
 	
 	cfg.patches[patch_idx].cc_mapping[axis] = cc_num;
 	
@@ -249,7 +249,7 @@ static int cmd_config_accel_min(const struct shell *sh, size_t argc, char **argv
 	}
 	
 	uint8_t patch_idx = cfg.global.default_patch;
-	if (patch_idx >= 127) patch_idx = 0;
+	if (patch_idx >= 16) patch_idx = 0;
 	
 	cfg.patches[patch_idx].accel_min[axis] = (uint8_t)value;
 	
@@ -293,7 +293,7 @@ static int cmd_config_accel_max(const struct shell *sh, size_t argc, char **argv
 	}
 	
 	uint8_t patch_idx = cfg.global.default_patch;
-	if (patch_idx >= 127) patch_idx = 0;
+	if (patch_idx >= 16) patch_idx = 0;
 	
 	cfg.patches[patch_idx].accel_max[axis] = (uint8_t)value;
 	
@@ -337,7 +337,7 @@ static int cmd_config_accel_invert(const struct shell *sh, size_t argc, char **a
 	}
 	
 	uint8_t patch_idx = cfg.global.default_patch;
-	if (patch_idx >= 127) patch_idx = 0;
+	if (patch_idx >= 16) patch_idx = 0;
 	
 	if (invert) {
 		cfg.patches[patch_idx].accel_invert |= (1 << axis);
@@ -564,13 +564,13 @@ static int cmd_midi_send_rt(const struct shell *sh, size_t argc, char **argv)
 static int cmd_config_patch(const struct shell *sh, size_t argc, char **argv)
 {
 	if (argc != 2) {
-		shell_error(sh, "Usage: config patch <0-126>");
+		shell_error(sh, "Usage: config patch <0-15>");
 		return -1;
 	}
 	
 	int patch_num = atoi(argv[1]);
-	if (patch_num < 0 || patch_num > 126) {
-		shell_error(sh, "Invalid patch number (0-126)");
+	if (patch_num < 0 || patch_num > 15) {
+		shell_error(sh, "Invalid patch number (0-15)");
 		return -1;
 	}
 	
@@ -611,13 +611,13 @@ static int cmd_config_patch(const struct shell *sh, size_t argc, char **argv)
 static int cmd_config_select_patch(const struct shell *sh, size_t argc, char **argv)
 {
 	if (argc != 2) {
-		shell_error(sh, "Usage: config select <0-126>");
+		shell_error(sh, "Usage: config select <0-15>");
 		return -1;
 	}
 	
 	int patch_num = atoi(argv[1]);
-	if (patch_num < 0 || patch_num > 126) {
-		shell_error(sh, "Invalid patch number (0-126)");
+	if (patch_num < 0 || patch_num > 15) {
+		shell_error(sh, "Invalid patch number (0-15)");
 		return -1;
 	}
 	
@@ -658,7 +658,7 @@ static int cmd_config_list_patches(const struct shell *sh, size_t argc, char **a
 	
 	uint8_t active = cfg.global.default_patch;
 	
-	shell_print(sh, "\n=== Patches (0-126) ===");
+	shell_print(sh, "\n=== Patches (0-15) ===");
 	shell_print(sh, "Active patch: %d\n", active);
 	
 	/* Show first 10 patches as a sample */
@@ -705,8 +705,8 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_config,
 	SHELL_CMD(show, NULL, "Show current configuration", cmd_config_show),
 	SHELL_CMD(save, NULL, "Save configuration to flash", cmd_config_save),
 	SHELL_CMD(restore, NULL, "Restore factory defaults", cmd_config_restore),
-	SHELL_CMD_ARG(patch, NULL, "Show specific patch <0-126>", cmd_config_patch, 2, 0),
-	SHELL_CMD_ARG(select, NULL, "Select active patch <0-126>", cmd_config_select_patch, 2, 0),
+	SHELL_CMD_ARG(patch, NULL, "Show specific patch <0-15>", cmd_config_patch, 2, 0),
+	SHELL_CMD_ARG(select, NULL, "Select active patch <0-15>", cmd_config_select_patch, 2, 0),
 	SHELL_CMD(list, NULL, "List patches", cmd_config_list_patches),
 	SHELL_CMD_ARG(midi_ch, NULL, "Set MIDI channel <1-16>", cmd_config_midi_ch, 2, 0),
 	SHELL_CMD_ARG(cc, NULL, "Set CC mapping <x|y|z> <0-127>", cmd_config_cc, 3, 0),

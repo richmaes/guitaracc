@@ -153,7 +153,7 @@ static void cmd_config(const char *args)
 			ui_print("  Average depth: %d samples\r\n", cfg.global.running_average_depth);
 			
 			uint8_t patch_idx = cfg.global.default_patch;
-			if (patch_idx >= 127) patch_idx = 0;
+			if (patch_idx >= 16) patch_idx = 0;
 			
 			ui_print("\r\n--- PATCH SETTINGS (Patch %d) ---\r\n", patch_idx);
 			ui_print("Name: %s\r\n", cfg.patches[patch_idx].patch_name);
@@ -234,7 +234,7 @@ static void cmd_config(const char *args)
 				static struct config_data cfg;
 				if (config_storage_load(&cfg) == 0) {
 					uint8_t patch_idx = cfg.global.default_patch;
-					if (patch_idx >= 127) patch_idx = 0;
+					if (patch_idx >= 16) patch_idx = 0;
 					
 					cfg.patches[patch_idx].cc_mapping[axis] = cc_num;
 					if (config_storage_save(&cfg) == 0) {

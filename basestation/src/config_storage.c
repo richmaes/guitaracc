@@ -24,17 +24,17 @@ LOG_MODULE_REGISTER(config_storage, LOG_LEVEL_DBG);
 #define FLASH_DEVICE DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller))
 
 /* Memory layout in internal flash using Partition Manager
- * The settings_storage partition is defined in pm_static.yml at 0xFC000
+ * The settings_storage partition is 8KB at 0xFC000-0xFDFFF
  * This matches the partition manager output and avoids code conflicts
  */
-#define CONFIG_FLASH_OFFSET  0x000FC000  /* From pm_static.yml */
-#define CONFIG_STORAGE_SIZE  0x00008000  /* 32KB */
+#define CONFIG_FLASH_OFFSET  0x000FC000  /* From partition manager */
+#define CONFIG_STORAGE_SIZE  0x00002000  /* 8KB (actual partition size) */
 
-/* Ping-pong storage with two 16KB areas (no DEFAULT area) */
+/* Ping-pong storage with two 4KB areas (no DEFAULT area) */
 #define CONFIG_AREA_A_OFFSET   (CONFIG_FLASH_OFFSET + 0x0000)  /* +0KB */
-#define CONFIG_AREA_A_SIZE     0x00004000  /* 16KB */
-#define CONFIG_AREA_B_OFFSET   (CONFIG_FLASH_OFFSET + 0x4000)  /* +16KB */
-#define CONFIG_AREA_B_SIZE     0x00004000  /* 16KB */
+#define CONFIG_AREA_A_SIZE     0x00001000  /* 4KB */
+#define CONFIG_AREA_B_OFFSET   (CONFIG_FLASH_OFFSET + 0x1000)  /* +4KB */
+#define CONFIG_AREA_B_SIZE     0x00001000  /* 4KB */
 
 /* Flash page size for nRF5340 internal flash */
 #define FLASH_PAGE_SIZE 4096
@@ -44,6 +44,9 @@ static struct config_data current_config;
 static enum config_area active_area = CONFIG_AREA_A;
 static uint32_t current_sequence = 0;
 static bool initialized = false;
+
+/* Runtime flag to enable DEFAULT area writes (double protection) */
+static bool default_write_unlocked = false;
 
 /* Flash device handle */
 static const struct device *flash_dev;
@@ -254,7 +257,7 @@ void config_storage_get_hardcoded_defaults(struct config_data *data)
 	data->global.running_average_depth = 5;   /* 5 samples */
 	
 	/* Initialize all patches with defaults */
-	for (int p = 0; p < 127; p++) {
+	for (int p = 0; p < 16; p++) {
 		data->patches[p].velocity_curve = 0; /* Linear */
 		data->patches[p].cc_mapping[0] = 16;  /* CC16: General Purpose 1 (X-axis) */
 		data->patches[p].cc_mapping[1] = 17;  /* CC17: General Purpose 2 (Y-axis) */
@@ -264,12 +267,6 @@ void config_storage_get_hardcoded_defaults(struct config_data *data)
 		data->patches[p].cc_mapping[5] = 21;  /* CC21: General Purpose 6 (Yaw) */
 		data->patches[p].led_mode = 0;          /* Normal mode */
 		data->patches[p].accel_deadzone = 100;  /* 100 units */
-		/* Per-axis min/max/invert defaults */
-		for (int i = 0; i < 6; i++) {
-			data->patches[p].accel_min[i] = 0;    /* Minimum CC value */
-			data->patches[p].accel_max[i] = 127;  /* Maximum CC value */
-		}
-		data->patches[p].accel_invert = 0;  /* No inversion */
 		snprintf(data->patches[p].patch_name, sizeof(data->patches[p].patch_name), 
 		         "Patch %d", p);
 	}
@@ -304,9 +301,7 @@ int config_storage_init(void)
 	
 	/* Log storage partition info */
 	LOG_INF("Storage: offset=0x%08x size=0x%x", CONFIG_FLASH_OFFSET, CONFIG_STORAGE_SIZE);
-	LOG_INF("A: 0x%08x (%dKB), B: 0x%08x (%dKB)",
-		CONFIG_AREA_A_OFFSET, CONFIG_AREA_A_SIZE / 1024,
-		CONFIG_AREA_B_OFFSET, CONFIG_AREA_B_SIZE / 1024);
+	LOG_INF("A: 0x%08x, B: 0x%08x", CONFIG_AREA_A_OFFSET, CONFIG_AREA_B_OFFSET);
 	
 	/* Try to read from both active areas */
 	static struct config_header header_a, header_b;
@@ -418,9 +413,9 @@ int config_storage_restore_defaults(void)
 	
 	static struct config_data data;
 	
-	/* Load hardcoded defaults */
-	LOG_INF("Restoring hardcoded factory defaults");
+	/* Use hardcoded defaults */
 	config_storage_get_hardcoded_defaults(&data);
+	LOG_INF("Restoring hardcoded factory defaults");
 	
 	/* Save to active storage */
 	return config_storage_save(&data);
@@ -442,6 +437,34 @@ int config_storage_get_info(enum config_area *area, uint32_t *sequence)
 	return 0;
 }
 
+int config_storage_unlock_default_write(void)
+{
+	if (!initialized) {
+		return -EACCES;
+	}
+	
+#ifndef CONFIG_CONFIG_ALLOW_DEFAULT_WRITE
+	LOG_ERR("DEFAULT write disabled at compile time");
+	return -EPERM;
+#endif
+	
+	LOG_WRN("*** DEFAULT AREA WRITE UNLOCKED ***");
+	LOG_WRN("Next write_default() call will succeed");
+	LOG_WRN("Lock will auto-reset after write");
+	default_write_unlocked = true;
+	
+	return 0;
+}
+
+bool config_storage_is_default_write_enabled(void)
+{
+#ifdef CONFIG_CONFIG_ALLOW_DEFAULT_WRITE
+	return default_write_unlocked;
+#else
+	return false;
+#endif
+}
+
 int config_storage_erase_all(void)
 {
 	if (!initialized) {
@@ -450,27 +473,23 @@ int config_storage_erase_all(void)
 	}
 	
 	LOG_WRN("*** ERASING ALL CONFIGURATION STORAGE ***");
-	LOG_WRN("This will erase AREA_A and AREA_B");
+	LOG_WRN("This will erase DEFAULT, AREA_A, and AREA_B");
 	
-	/* Erase both areas (need to erase 4 pages per 16KB area) */
+	/* Erase both areas */
 	int ret;
 	
-	LOG_INF("Erasing AREA_A at 0x%08x (16KB)...", CONFIG_AREA_A_OFFSET);
-	for (int i = 0; i < 4; i++) {
-		ret = flash_erase(flash_dev, CONFIG_AREA_A_OFFSET + (i * FLASH_PAGE_SIZE), FLASH_PAGE_SIZE);
-		if (ret != 0) {
-			LOG_ERR("Failed to erase AREA_A page %d: %d", i + 1, ret);
-			return ret;
-		}
+	LOG_INF("Erasing AREA_A at 0x%08x...", CONFIG_AREA_A_OFFSET);
+	ret = flash_erase(flash_dev, CONFIG_AREA_A_OFFSET, FLASH_PAGE_SIZE);
+	if (ret != 0) {
+		LOG_ERR("Failed to erase AREA_A: %d", ret);
+		return ret;
 	}
 	
-	LOG_INF("Erasing AREA_B at 0x%08x (16KB)...", CONFIG_AREA_B_OFFSET);
-	for (int i = 0; i < 4; i++) {
-		ret = flash_erase(flash_dev, CONFIG_AREA_B_OFFSET + (i * FLASH_PAGE_SIZE), FLASH_PAGE_SIZE);
-		if (ret != 0) {
-			LOG_ERR("Failed to erase AREA_B page %d: %d", i + 1, ret);
-			return ret;
-		}
+	LOG_INF("Erasing AREA_B at 0x%08x...", CONFIG_AREA_B_OFFSET);
+	ret = flash_erase(flash_dev, CONFIG_AREA_B_OFFSET, FLASH_PAGE_SIZE);
+	if (ret != 0) {
+		LOG_ERR("Failed to erase AREA_B: %d", ret);
+		return ret;
 	}
 	
 	LOG_WRN("All configuration areas erased - device will use defaults on next boot");

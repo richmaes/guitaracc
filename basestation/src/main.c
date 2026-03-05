@@ -112,7 +112,7 @@ static void reload_config(void)
 		config_storage_get_hardcoded_defaults(&current_config);
 	} else {
 		uint8_t patch_idx = current_config.global.default_patch;
-		if (patch_idx >= 127) patch_idx = 0;
+		if (patch_idx >= 16) patch_idx = 0;
 		LOG_INF("Config reloaded: MIDI ch=%d, Patch %d, CC=[%d,%d,%d]",
 			current_config.global.midi_channel + 1,
 			patch_idx,
@@ -379,7 +379,7 @@ static void process_accel_data(const struct accel_data *accel, int guitar_id)
 	
 	/* Get active patch index */
 	uint8_t patch_idx = current_config.global.default_patch;
-	if (patch_idx >= 127) patch_idx = 0;
+	if (patch_idx >= 16) patch_idx = 0;
 	
 	/* Send MIDI CC messages using configured channel and CC numbers */
 	send_midi_cc(current_config.global.midi_channel, current_config.patches[patch_idx].cc_mapping[0], cc_x);
@@ -1149,7 +1149,7 @@ int main(void)
 		err = config_storage_load(&current_config);
 		if (err == 0) {
 			uint8_t patch_idx = current_config.global.default_patch;
-			if (patch_idx >= 127) patch_idx = 0;
+			if (patch_idx >= 16) patch_idx = 0;
 			LOG_INF("Loaded config: MIDI ch=%d, Patch %d, CC=[%d,%d,%d]",
 				current_config.global.midi_channel + 1,
 				patch_idx,

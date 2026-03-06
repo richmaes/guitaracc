@@ -94,6 +94,9 @@ def write_patch_config(ser, patch_num, config, debug=False):
         if debug:
             print(f"  CC {axis}={config['cc_mapping'][i]} response: {resp[:80]}")
     
+    # Write velocity curve
+    send_command(ser, f"config velocity_curve {config['velocity_curve']}", wait_time=0.4, verbose=debug)
+    
     # Write accel min/max/invert for all 6 axes
     for i in range(6):
         send_command(ser, f"config accel_min {i} {config['accel_min'][i]}", wait_time=0.3, verbose=debug)
@@ -127,6 +130,13 @@ def verify_patch_config(ser, patch_num, expected_config, debug=False):
                 errors.append(f"CC[{i}]: expected {expected_config['cc_mapping'][i]}, got {actual_config['cc_mapping'][i]}")
     else:
         errors.append("CC mapping not found in response")
+    
+    # Compare velocity curve
+    if 'velocity_curve' in actual_config:
+        if actual_config['velocity_curve'] != expected_config['velocity_curve']:
+            errors.append(f"Velocity curve: expected {expected_config['velocity_curve']}, got {actual_config['velocity_curve']}")
+    else:
+        errors.append("Velocity curve not found")
     
     # Compare accel min/max/invert
     for field in ['accel_min', 'accel_max', 'accel_invert']:

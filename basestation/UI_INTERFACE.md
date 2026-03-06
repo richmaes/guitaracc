@@ -42,14 +42,11 @@ Commands are organized hierarchically using the Zephyr Shell:
 - `config accel_min <0-5> <0-127>` - Set minimum CC value for axis
 - `config accel_max <0-5> <0-127>` - Set maximum CC value for axis
 - `config accel_invert <0-5> <0|1>` - Enable/disable axis inversion
+- `config velocity_curve <0-127>` - Set velocity curve for active patch
 - `config scan_interval <10-1000>` - Set BLE scan interval in ms
 - `config avg_enable <0|1>` - Enable/disable running average filter
 - `config avg_depth <3-10>` - Set running average depth
 - `config erase_all` - Erase all configuration (testing only)
-
-**TODO:**
-- Add `config velocity_curve <0-10>` command to set velocity curve per patch
-- Add getter/setter commands for additional patch parameters as needed
 
 #### MIDI Commands (`midi` submenu)
 - `midi rx_stats` - Show MIDI receive statistics

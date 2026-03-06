@@ -359,6 +359,45 @@ static int cmd_config_accel_invert(const struct shell *sh, size_t argc, char **a
 	return 0;
 }
 
+static int cmd_config_velocity_curve(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc != 2) {
+		shell_error(sh, "Usage: config velocity_curve <0-127>");
+		return -1;
+	}
+	
+	int curve = atoi(argv[1]);
+	if (curve < 0 || curve > 127) {
+		shell_error(sh, "Invalid velocity curve (0-127)");
+		return -1;
+	}
+	
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= 16) patch_idx = 0;
+	
+	cfg.patches[patch_idx].velocity_curve = (uint8_t)curve;
+	
+	if (config_storage_save(&cfg) != 0) {
+		shell_error(sh, "Error saving configuration");
+		return -1;
+	}
+	
+	shell_print(sh, "Velocity curve set to %d (patch %d setting)", curve, patch_idx);
+	
+	/* Trigger config reload */
+	if (ui_config_reload_callback) {
+		ui_config_reload_callback();
+	}
+	
+	return 0;
+}
+
 static int cmd_config_scan_interval(const struct shell *sh, size_t argc, char **argv)
 {
 	if (argc != 2) {
@@ -713,6 +752,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_config,
 	SHELL_CMD_ARG(accel_min, NULL, "Set axis min CC <0-5> <0-127>", cmd_config_accel_min, 3, 0),
 	SHELL_CMD_ARG(accel_max, NULL, "Set axis max CC <0-5> <0-127>", cmd_config_accel_max, 3, 0),
 	SHELL_CMD_ARG(accel_invert, NULL, "Invert axis <0-5> <0|1>", cmd_config_accel_invert, 3, 0),
+	SHELL_CMD_ARG(velocity_curve, NULL, "Set velocity curve <0-127>", cmd_config_velocity_curve, 2, 0),
 	SHELL_CMD_ARG(scan_interval, NULL, "Set BLE scan interval <10-1000> ms", cmd_config_scan_interval, 2, 0),
 	SHELL_CMD_ARG(avg_enable, NULL, "Enable running average <0|1>", cmd_config_avg_enable, 2, 0),
 	SHELL_CMD_ARG(avg_depth, NULL, "Set average depth <3-10> samples", cmd_config_avg_depth, 2, 0),

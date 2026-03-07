@@ -8,6 +8,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/data/json.h>
 #include <stdlib.h>
 
 LOG_MODULE_REGISTER(ui_shell, LOG_LEVEL_DBG);
@@ -736,6 +737,132 @@ static int cmd_config_erase_all(const struct shell *sh, size_t argc, char **argv
 	return 0;
 }
 
+/* Helper function to print JSON boolean */
+static const char *json_bool(bool value)
+{
+	return value ? "true" : "false";
+}
+
+/* Helper function to print patch as JSON */
+static void print_patch_json(const struct shell *sh, const struct patch_config *patch, int patch_num, bool last)
+{
+	shell_print(sh, "      {");
+	shell_print(sh, "        \"patch_num\": %d,", patch_num);
+	shell_print(sh, "        \"patch_name\": \"%s\",", patch->patch_name);
+	shell_print(sh, "        \"velocity_curve\": %d,", patch->velocity_curve);
+	shell_print(sh, "        \"cc_mapping\": [%d, %d, %d, %d, %d, %d],",
+		    patch->cc_mapping[0], patch->cc_mapping[1], patch->cc_mapping[2],
+		    patch->cc_mapping[3], patch->cc_mapping[4], patch->cc_mapping[5]);
+	shell_print(sh, "        \"led_mode\": %d,", patch->led_mode);
+	shell_print(sh, "        \"accel_deadzone\": %d,", patch->accel_deadzone);
+	shell_print(sh, "        \"accel_min\": [%d, %d, %d, %d, %d, %d],",
+		    patch->accel_min[0], patch->accel_min[1], patch->accel_min[2],
+		    patch->accel_min[3], patch->accel_min[4], patch->accel_min[5]);
+	shell_print(sh, "        \"accel_max\": [%d, %d, %d, %d, %d, %d],",
+		    patch->accel_max[0], patch->accel_max[1], patch->accel_max[2],
+		    patch->accel_max[3], patch->accel_max[4], patch->accel_max[5]);
+	shell_print(sh, "        \"accel_invert\": %d", patch->accel_invert);
+	shell_print(sh, "      }%s", last ? "" : ",");
+}
+
+static int cmd_config_export(const struct shell *sh, size_t argc, char **argv)
+{
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	/* Determine export type: full, global, or single patch */
+	bool export_global = false;
+	bool export_patches = false;
+	int single_patch = -1;
+	
+	if (argc == 1) {
+		/* No arguments - export everything */
+		export_global = true;
+		export_patches = true;
+	} else if (argc == 2 && strcmp(argv[1], "global") == 0) {
+		/* Export global only */
+		export_global = true;
+	} else if (argc == 3 && strcmp(argv[1], "patch") == 0) {
+		/* Export single patch */
+		single_patch = atoi(argv[2]);
+		if (single_patch < 0 || single_patch > 15) {
+			shell_error(sh, "Invalid patch number (0-15)");
+			return -1;
+		}
+		export_patches = true;
+	} else {
+		shell_error(sh, "Usage: config export [global | patch <0-15>]");
+		return -1;
+	}
+	
+	/* Print JSON header */
+	shell_print(sh, "{");
+	shell_print(sh, "  \"version\": 1,");
+	shell_print(sh, "  \"config\": {");
+	
+	/* Export global section */
+	if (export_global) {
+		shell_print(sh, "    \"global\": {");
+		shell_print(sh, "      \"default_patch\": %d,", cfg.global.default_patch);
+		shell_print(sh, "      \"midi_channel\": %d,", cfg.global.midi_channel);
+		shell_print(sh, "      \"max_guitars\": %d,", cfg.global.max_guitars);
+		shell_print(sh, "      \"ble_scan_interval_ms\": %d,", cfg.global.scan_interval_ms);
+		shell_print(sh, "      \"led_brightness\": %d,", cfg.global.led_brightness);
+		shell_print(sh, "      \"accel_scale\": [%d, %d, %d, %d, %d, %d],",
+			    cfg.global.accel_scale[0], cfg.global.accel_scale[1], cfg.global.accel_scale[2],
+			    cfg.global.accel_scale[3], cfg.global.accel_scale[4], cfg.global.accel_scale[5]);
+		shell_print(sh, "      \"running_average_enable\": %s,", json_bool(cfg.global.running_average_enable));
+		shell_print(sh, "      \"running_average_depth\": %d", cfg.global.running_average_depth);
+		shell_print(sh, "    }%s", export_patches ? "," : "");
+	}
+	
+	/* Export patches section */
+	if (export_patches) {
+		shell_print(sh, "    \"patches\": [");
+		
+		if (single_patch >= 0) {
+			/* Export single patch */
+			print_patch_json(sh, &cfg.patches[single_patch], single_patch, true);
+		} else {
+			/* Export all patches */
+			for (int i = 0; i < 16; i++) {
+				print_patch_json(sh, &cfg.patches[i], i, (i == 15));
+			}
+		}
+		
+		shell_print(sh, "    ]");
+	}
+	
+	/* Print JSON footer */
+	shell_print(sh, "  }");
+	shell_print(sh, "}");
+	
+	return 0;
+}
+
+static int cmd_config_import(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	
+	shell_warn(sh, "Interactive import not yet implemented");
+	shell_print(sh, "Use config_tool.py script for importing configurations");
+	shell_print(sh, "Or manually set values using:");
+	shell_print(sh, "  config midi_ch <1-16>");
+	shell_print(sh, "  config select <0-15>");
+	shell_print(sh, "  config cc <x|y|z> <0-127>");
+	shell_print(sh, "  config accel_min <0-5> <0-127>");
+	shell_print(sh, "  config accel_max <0-5> <0-127>");
+	shell_print(sh, "  config accel_invert <0-5> <0|1>");
+	shell_print(sh, "  config velocity_curve <0-127>");
+	shell_print(sh, "  config save");
+	
+	return 0;
+}
+
 /*
  * Shell command registration
  */
@@ -756,6 +883,8 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_config,
 	SHELL_CMD_ARG(scan_interval, NULL, "Set BLE scan interval <10-1000> ms", cmd_config_scan_interval, 2, 0),
 	SHELL_CMD_ARG(avg_enable, NULL, "Enable running average <0|1>", cmd_config_avg_enable, 2, 0),
 	SHELL_CMD_ARG(avg_depth, NULL, "Set average depth <3-10> samples", cmd_config_avg_depth, 2, 0),
+	SHELL_CMD_ARG(export, NULL, "Export config [global | patch <0-15>]", cmd_config_export, 1, 2),
+	SHELL_CMD(import, NULL, "Import config from JSON", cmd_config_import),
 	SHELL_CMD(erase_all, NULL, "Erase all config (testing only)", cmd_config_erase_all),
 	SHELL_SUBCMD_SET_END
 );

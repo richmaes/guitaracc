@@ -48,6 +48,15 @@ Commands are organized hierarchically using the Zephyr Shell:
 - `config avg_depth <3-10>` - Set running average depth
 - `config erase_all` - Erase all configuration (testing only)
 
+#### Configuration Import/Export Commands (`config` submenu)
+- `config export` - Export entire configuration (global + all patches) in JSON format
+- `config export global` - Export only global configuration
+- `config export patch <0-15>` - Export single patch configuration
+- `config import` - Import configuration from JSON input (interactive mode)
+  - Supports full, global-only, or single-patch updates
+  - Validates input before applying changes
+  - Automatically saves to flash after successful import
+
 #### MIDI Commands (`midi` submenu)
 - `midi rx_stats` - Show MIDI receive statistics
   - Total bytes received
@@ -355,6 +364,229 @@ Factory defaults written successfully
    - MIDI activity monitoring
    - BLE connection statistics
    - Enhanced error reporting
+
+## Configuration Import/Export
+
+### Overview
+The configuration import/export feature enables backup, sharing, and remote configuration of the basestation. Configuration data is exchanged in JSON format, which is human-readable, version-control friendly, and easily extensible.
+
+### Export Format
+
+The export format uses JSON with a hierarchical structure:
+
+```json
+{
+  "version": 1,
+  "config": {
+    "global": {
+      "default_patch": 0,
+      "midi_channel": 0,
+      "max_guitars": 4,
+      "ble_scan_interval_ms": 100,
+      "led_brightness": 128,
+      "accel_scale": [1000, 1000, 1000, 1000, 1000, 1000],
+      "running_average_enable": true,
+      "running_average_depth": 5
+    },
+    "patches": [
+      {
+        "patch_num": 0,
+        "patch_name": "Patch 0",
+        "velocity_curve": 0,
+        "cc_mapping": [10, 94, 4, 19, 20, 21],
+        "led_mode": 0,
+        "accel_deadzone": 100,
+        "accel_min": [0, 0, 0, 0, 0, 0],
+        "accel_max": [127, 127, 127, 127, 127, 127],
+        "accel_invert": 0
+      }
+      ... (patches 1-15)
+    ]
+  }
+}
+```
+
+### Export Commands
+
+#### Export Full Configuration
+```bash
+config export
+```
+Outputs complete configuration including global settings and all 16 patches.
+
+#### Export Global Settings Only
+```bash
+config export global
+```
+Outputs only the global configuration section.
+
+#### Export Single Patch
+```bash
+config export patch 5
+```
+Exports configuration for patch 5 only.
+
+### Import Format
+
+The import command accepts JSON in the same format as export. Three types of imports are supported:
+
+#### Full Configuration Import
+```json
+{
+  "version": 1,
+  "config": {
+    "global": { ... },
+    "patches": [ ... ]
+  }
+}
+```
+Updates both global settings and all patches.
+
+#### Global-Only Import
+```json
+{
+  "version": 1,
+  "config": {
+    "global": {
+      "midi_channel": 5,
+      "ble_scan_interval_ms": 200
+    }
+  }
+}
+```
+Updates only global settings, leaves patches unchanged.
+
+#### Single-Patch Import
+```json
+{
+  "version": 1,
+  "config": {
+    "patches": [
+      {
+        "patch_num": 3,
+        "patch_name": "Custom Patch",
+        "cc_mapping": [20, 21, 22, 23, 24, 25]
+      }
+    ]
+  }
+}
+```
+Updates only the specified patch (patch 3), leaves other patches and global settings unchanged.
+
+### Import Command
+
+#### Interactive Import
+```bash
+config import
+```
+
+The device enters line-by-line input mode. Paste or type the JSON configuration, then send a terminating sequence to process.
+
+**Validation:**
+- JSON syntax is validated before parsing
+- Field ranges are checked (e.g., MIDI channel 0-15, CC values 0-127)
+- Invalid fields are rejected with error messages
+- Configuration is only updated if all validations pass
+
+**Auto-Save:**
+After successful validation and import, the configuration is automatically saved to flash.
+
+### Usage Workflows
+
+#### Backup Configuration
+```bash
+# Export to file via serial capture
+config export > basestation_config_backup.json
+```
+
+#### Share/Clone Configuration
+```bash
+# On source device
+config export
+# Copy output to file
+
+# On target device
+config import
+# Paste JSON content
+```
+
+#### Update Single Patch Remotely
+```bash
+# Export just one patch as template
+config export patch 0
+# Edit the JSON, then import modified patch
+config import
+```
+
+#### Batch Configuration via Script
+Python scripts can automate configuration:
+```python
+import serial
+import time
+
+config_json = """
+{
+  "version": 1,
+  "config": {
+    "global": {
+      "midi_channel": 3
+    }
+  }
+}
+"""
+
+ser = serial.Serial('/dev/ttyUSB0', 115200)
+ser.write(b'config import\r\n')
+time.sleep(0.5)
+ser.write(config_json.encode())
+ser.write(b'\x04\r\n')  # Send terminator
+```
+
+### Format Extensibility
+
+The JSON format is designed for extensibility:
+
+**Version Field:**
+- `"version": 1` identifies the schema version
+- Future schema changes increment the version
+- Older firmware can reject newer schemas gracefully
+
+**Optional Fields:**
+- Missing fields use current values (merge behavior)
+- Extra fields are ignored (forward compatibility)
+- Allows older config files to work with newer firmware
+
+**Adding New Parameters:**
+1. Add field to JSON schema documentation
+2. Update export command to include new field
+3. Update import validation to handle new field
+4. Increment version if breaking changes
+
+### Error Handling
+
+Import errors are reported with specific messages:
+
+- **Syntax Error:** `JSON parse error at line X`
+- **Range Error:** `Field 'midi_channel' out of range (0-15)`
+- **Invalid Type:** `Field 'running_average_enable' must be boolean`
+- **Missing Required:** `Required field 'version' not found`
+
+On error, the current configuration remains unchanged.
+
+### Python Helper Tool
+
+A Python tool (`config_tool.py`) will be provided for configuration management:
+
+```bash
+# Export config to file
+./config_tool.py export -p /dev/ttyUSB0 -o config.json
+
+# Import config from file
+./config_tool.py import -p /dev/ttyUSB0 -i config.json
+
+# Validate JSON without importing
+./config_tool.py validate -i config.json
+```
 
 ## Migration Notes
 

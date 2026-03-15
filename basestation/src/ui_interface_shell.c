@@ -69,9 +69,17 @@ static int cmd_config_show(const struct shell *sh, size_t argc, char **argv)
 	shell_print(sh, "LED:");
 	shell_print(sh, "  Brightness: %d", cfg.global.led_brightness);
 	shell_print(sh, "Accelerometer:");
-	shell_print(sh, "  Scale: [%d, %d, %d, %d, %d, %d]",
-		cfg.global.accel_scale[0], cfg.global.accel_scale[1], cfg.global.accel_scale[2],
-		cfg.global.accel_scale[3], cfg.global.accel_scale[4], cfg.global.accel_scale[5]);
+	shell_print(sh, "  Scale (mg): X=±%d, Y=±%d, Z=±%d (full scale G-force → MIDI 0-127)",
+		cfg.global.accel_scale[0], cfg.global.accel_scale[1], cfg.global.accel_scale[2]);
+	shell_print(sh, "  Offset (mg): X=%d, Y=%d, Z=%d (center point → MIDI 64)",
+		cfg.global.accel_offset[0], cfg.global.accel_offset[1], cfg.global.accel_offset[2]);
+	shell_print(sh, "  Ranges: X=[%d:%d], Y=[%d:%d], Z=[%d:%d] mg → MIDI[0:127]",
+		cfg.global.accel_offset[0] - cfg.global.accel_scale[0],
+		cfg.global.accel_offset[0] + cfg.global.accel_scale[0],
+		cfg.global.accel_offset[1] - cfg.global.accel_scale[1],
+		cfg.global.accel_offset[1] + cfg.global.accel_scale[1],
+		cfg.global.accel_offset[2] - cfg.global.accel_scale[2],
+		cfg.global.accel_offset[2] + cfg.global.accel_scale[2]);
 	shell_print(sh, "Filters:");
 	shell_print(sh, "  Running average: %s", cfg.global.running_average_enable ? "Enabled" : "Disabled");
 	shell_print(sh, "  Average depth: %d samples", cfg.global.running_average_depth);
@@ -352,6 +360,146 @@ static int cmd_config_accel_invert(const struct shell *sh, size_t argc, char **a
 	}
 	
 	shell_print(sh, "Axis %d invert set to %s (patch %d)", axis, invert ? "ON" : "OFF", patch_idx);
+	
+	if (ui_config_reload_callback) {
+		ui_config_reload_callback();
+	}
+	
+	return 0;
+}
+
+static int cmd_config_accel_deadzone(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc != 2) {
+		shell_error(sh, "Usage: config accel_deadzone <0-127>");
+		return -1;
+	}
+	
+	int deadzone = atoi(argv[1]);
+	if (deadzone < 0 || deadzone > 127) {
+		shell_error(sh, "Invalid deadzone (0-127)");
+		return -1;
+	}
+	
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= 16) patch_idx = 0;
+	
+	cfg.patches[patch_idx].accel_deadzone = (int16_t)deadzone;
+	
+	if (config_storage_save(&cfg) != 0) {
+		shell_error(sh, "Error saving configuration");
+		return -1;
+	}
+	
+	shell_print(sh, "CC change threshold set to %d (patch %d)", deadzone, patch_idx);
+	shell_print(sh, "MIDI CC will only be sent when value changes by >= %d", deadzone);
+	
+	if (ui_config_reload_callback) {
+		ui_config_reload_callback();
+	}
+	
+	return 0;
+}
+
+static int cmd_config_accel_scale(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc != 3) {
+		shell_error(sh, "Usage: config accel_scale <axis:0-2> <scale_mg:100-4000>");
+		shell_error(sh, "  axis: 0=X, 1=Y, 2=Z");
+		shell_error(sh, "  scale_mg: G-force in milli-g that maps to full MIDI range");
+		shell_error(sh, "  Examples:");
+		shell_error(sh, "    500  = ±0.5g maps to MIDI 0-127 (high sensitivity)");
+		shell_error(sh, "    1000 = ±1.0g maps to MIDI 0-127 (medium sensitivity)");
+		shell_error(sh, "    2000 = ±2.0g maps to MIDI 0-127 (low sensitivity, default)");
+		return -1;
+	}
+	
+	int axis = atoi(argv[1]);
+	if (axis < 0 || axis > 2) {
+		shell_error(sh, "Invalid axis (0=X, 1=Y, 2=Z)");
+		return -1;
+	}
+	
+	int scale_mg = atoi(argv[2]);
+	if (scale_mg < 100 || scale_mg > 4000) {
+		shell_error(sh, "Invalid scale (100-4000 mg = 0.1g-4.0g)");
+		return -1;
+	}
+	
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	cfg.global.accel_scale[axis] = (int16_t)scale_mg;
+	
+	if (config_storage_save(&cfg) != 0) {
+		shell_error(sh, "Error saving configuration");
+		return -1;
+	}
+	
+	const char *axis_names[] = {"X", "Y", "Z"};
+	shell_print(sh, "%s-axis scale set to ±%dmg (±%.1fg)", 
+		axis_names[axis], scale_mg, scale_mg / 1000.0);
+	shell_print(sh, "Accelerometer range ±%dmg now maps to MIDI 0-127", scale_mg);
+	shell_print(sh, "Values beyond this range will be clamped");
+	
+	if (ui_config_reload_callback) {
+		ui_config_reload_callback();
+	}
+	
+	return 0;
+}
+
+static int cmd_config_accel_offset(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc != 3) {
+		shell_error(sh, "Usage: config accel_offset <axis:0-2> <offset_mg:-2000-2000>");
+		shell_error(sh, "  axis: 0=X, 1=Y, 2=Z");
+		shell_error(sh, "  offset_mg: Accelerometer value (in milli-g) that maps to MIDI 64");
+		shell_error(sh, "  Examples:");
+		shell_error(sh, "    0    = 0g (neutral) maps to MIDI 64 (default)");
+		shell_error(sh, "    200  = +0.2g maps to MIDI 64");
+		shell_error(sh, "    -200 = -0.2g maps to MIDI 64");
+		return -1;
+	}
+	
+	int axis = atoi(argv[1]);
+	if (axis < 0 || axis > 2) {
+		shell_error(sh, "Invalid axis (0=X, 1=Y, 2=Z)");
+		return -1;
+	}
+	
+	int offset_mg = atoi(argv[2]);
+	if (offset_mg < -2000 || offset_mg > 2000) {
+		shell_error(sh, "Invalid offset (-2000 to 2000 mg = -2.0g to 2.0g)");
+		return -1;
+	}
+	
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	cfg.global.accel_offset[axis] = (int16_t)offset_mg;
+	
+	if (config_storage_save(&cfg) != 0) {
+		shell_error(sh, "Error saving configuration");
+		return -1;
+	}
+	
+	const char *axis_names[] = {"X", "Y", "Z"};
+	shell_print(sh, "%s-axis offset set to %dmg (%.2fg)", 
+		axis_names[axis], offset_mg, offset_mg / 1000.0);
+	shell_print(sh, "This accelerometer value now maps to MIDI 64 (center)");
 	
 	if (ui_config_reload_callback) {
 		ui_config_reload_callback();
@@ -814,6 +962,9 @@ static int cmd_config_export(const struct shell *sh, size_t argc, char **argv)
 		shell_print(sh, "      \"accel_scale\": [%d, %d, %d, %d, %d, %d],",
 			    cfg.global.accel_scale[0], cfg.global.accel_scale[1], cfg.global.accel_scale[2],
 			    cfg.global.accel_scale[3], cfg.global.accel_scale[4], cfg.global.accel_scale[5]);
+		shell_print(sh, "      \"accel_offset\": [%d, %d, %d, %d, %d, %d],",
+			    cfg.global.accel_offset[0], cfg.global.accel_offset[1], cfg.global.accel_offset[2],
+			    cfg.global.accel_offset[3], cfg.global.accel_offset[4], cfg.global.accel_offset[5]);
 		shell_print(sh, "      \"running_average_enable\": %s,", json_bool(cfg.global.running_average_enable));
 		shell_print(sh, "      \"running_average_depth\": %d", cfg.global.running_average_depth);
 		shell_print(sh, "    }%s", export_patches ? "," : "");
@@ -879,6 +1030,9 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_config,
 	SHELL_CMD_ARG(accel_min, NULL, "Set axis min CC <0-5> <0-127>", cmd_config_accel_min, 3, 0),
 	SHELL_CMD_ARG(accel_max, NULL, "Set axis max CC <0-5> <0-127>", cmd_config_accel_max, 3, 0),
 	SHELL_CMD_ARG(accel_invert, NULL, "Invert axis <0-5> <0|1>", cmd_config_accel_invert, 3, 0),
+	SHELL_CMD_ARG(accel_deadzone, NULL, "Set CC change threshold <0-127>", cmd_config_accel_deadzone, 2, 0),
+	SHELL_CMD_ARG(accel_scale, NULL, "Set axis G-force range <0-2> <100-4000>mg", cmd_config_accel_scale, 3, 0),
+	SHELL_CMD_ARG(accel_offset, NULL, "Set axis center point <0-2> <-2000-2000>mg", cmd_config_accel_offset, 3, 0),
 	SHELL_CMD_ARG(velocity_curve, NULL, "Set velocity curve <0-127>", cmd_config_velocity_curve, 2, 0),
 	SHELL_CMD_ARG(scan_interval, NULL, "Set BLE scan interval <10-1000> ms", cmd_config_scan_interval, 2, 0),
 	SHELL_CMD_ARG(avg_enable, NULL, "Enable running average <0|1>", cmd_config_avg_enable, 2, 0),

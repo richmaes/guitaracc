@@ -68,14 +68,15 @@ struct global_config {
 	uint8_t led_brightness;        /* LED brightness (0-255) */
 	
 	/* Accelerometer mapping */
-	int16_t accel_scale[6];        /* Scaling factors for each axis */
+	int16_t accel_scale[6];        /* Full-scale G-force in milli-g (100-4000mg) that maps to MIDI 0-127 */
+	int16_t accel_offset[6];       /* Center point offset in milli-g (e.g., 200mg makes +200mg → MIDI 64) */
 	
 	/* Filter configuration */
 	uint8_t running_average_enable; /* Enable running average filter (0/1) */
 	uint8_t running_average_depth;  /* Running average depth (3-10) */
 	
 	/* Reserved for future global settings */
-	uint8_t reserved[33];          /* Future expansion (33 bytes for 4-byte alignment) */
+	uint8_t reserved[21];          /* Future expansion (21 bytes for 4-byte alignment) */
 } __packed;
 
 /**

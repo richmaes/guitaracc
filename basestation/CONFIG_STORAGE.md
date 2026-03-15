@@ -1,5 +1,33 @@
 # Configuration Storage System
 
+## Quick Reference: Accelerometer Scaling
+
+**Configure sensitivity** by setting the G-force range that maps to full MIDI output (0-127):
+
+```bash
+# High sensitivity: ±0.5g = full MIDI range
+config accel_scale 0 500   # X-axis
+config accel_scale 1 500   # Y-axis
+config accel_scale 2 500   # Z-axis
+
+# Medium sensitivity: ±1.0g = full MIDI range
+config accel_scale 0 1000  # X-axis
+
+# Low sensitivity (default): ±2.0g = full MIDI range
+config accel_scale 0 2000  # X-axis
+```
+
+**How it works**:
+- Sets the accelerometer value (in milli-g) that maps to MIDI 127
+- Values beyond this range are clamped (no rollover)
+- Example: with scale=1000mg, ±1g maps to MIDI 0-127
+  - -1000mg → MIDI 0
+  - 0mg → MIDI 64 (center)
+  - +1000mg → MIDI 127
+  - Beyond ±1000mg → clamped to 0 or 127
+
+---
+
 ## Quick Reference: DEFAULT Area Write Protection
 
 **Current Setting**: `CONFIG_CONFIG_ALLOW_DEFAULT_WRITE=y` ✅ (Development mode)

@@ -5,12 +5,30 @@ This directory contains various test and verification scripts for the GuitarAcc 
 ## Regression Test Suite
 
 ### Quick Start
-Run the full regression test suite:
+Run the automated regression test suite:
 ```bash
 ./run_regression_tests.sh
 ```
 
+Run with interactive tests (requires user to move client device):
+```bash
+./run_regression_tests.sh -i
+```
+
 This will execute all verification tests in sequence and report overall pass/fail status.
+
+## Test Categories
+
+### Automated Tests
+These tests run without user interaction and can be used in CI/CD pipelines:
+- Patch Count & Persistence
+- Configuration Export/Import
+
+### Interactive Tests (require user presence)
+These tests require a user to physically move the client device:
+- Accelerometer Deadzone
+
+Use the `-i` or `--interactive` flag to include interactive tests.
 
 ## Individual Test Scripts
 
@@ -62,6 +80,41 @@ Tests the JSON-based config export/import functionality:
 - ✓ Export consistency
 - ✓ File save/reload
 
+### 3. Accelerometer Deadzone Test (INTERACTIVE)
+**Script:** `test_accel_deadzone.py`
+
+Tests the accelerometer deadzone feature that filters MIDI CC messages based on value change threshold. **This test requires user interaction** to move the client device.
+
+**Requirements:**
+- Client (Thingy:53) connected via BLE
+- User present to move the client device
+- Approximately 2-3 minutes to complete
+
+**Run:**
+```bash
+./test_accel_deadzone.py
+```
+
+Or as part of the regression suite:
+```bash
+./run_regression_tests.sh -i
+```
+
+**What it tests:**
+- ✓ Deadzone configuration via shell command
+- ✓ Value range validation (0-127)
+- ✓ MIDI message filtering based on CC value change threshold
+- ✓ Higher deadzone = more filtered messages
+- ✓ "(filtered)" debug log indicator
+- ✓ Configuration persistence across reloads
+
+**Test Procedure:**
+The test will prompt you when to move the client. You'll be asked to:
+1. Move the device continuously for 5 seconds (with deadzone=1)
+2. Move the device the same way for 5 seconds (with deadzone=20)
+
+The test compares the number of MIDI messages sent vs. filtered to verify the deadzone is working correctly.
+
 ## Helper Scripts
 
 ### config_tool.py
@@ -92,8 +145,9 @@ Helper module for automatic serial port selection. Used by other scripts to auto
 ```
 basestation/
 ├── run_regression_tests.sh       # Main regression test runner
-├── verify_patch_count.py          # Test 1: Patch persistence
-├── verify_export_import.py        # Test 2: Export/import
+├── verify_patch_count.py          # Test 1: Patch persistence (automated)
+├── verify_export_import.py        # Test 2: Export/import (automated)
+├── test_accel_deadzone.py         # Test 3: Deadzone filtering (interactive)
 ├── config_tool.py                 # Configuration management utility
 ├── select_port.py                 # Port selection helper
 ├── test_*.py                      # Other unit tests

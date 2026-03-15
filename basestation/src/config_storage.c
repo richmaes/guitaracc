@@ -250,8 +250,9 @@ void config_storage_get_hardcoded_defaults(struct config_data *data)
 	data->global.max_guitars = 4;
 	data->global.scan_interval_ms = 100;
 	data->global.led_brightness = 128;  /* 50% brightness */
-	for (int i = 0; i < 6; i++) {
-		data->global.accel_scale[i] = 1000;  /* 1.0x scale (fixed point) */
+	for (int i = 0; i < 3; i++) {
+		data->global.accel_scale[i] = 206;  /* ±0.2g full scale (±206mg maps to MIDI 0-127) */
+		data->global.accel_offset[i] = 289;   /* Center point (289mg) */
 	}
 	data->global.running_average_enable = 1;  /* Enabled */
 	data->global.running_average_depth = 5;   /* 5 samples */
@@ -259,14 +260,30 @@ void config_storage_get_hardcoded_defaults(struct config_data *data)
 	/* Initialize all patches with defaults */
 	for (int p = 0; p < 16; p++) {
 		data->patches[p].velocity_curve = 0; /* Linear */
+
 		data->patches[p].cc_mapping[0] = 16;  /* CC16: General Purpose 1 (X-axis) */
 		data->patches[p].cc_mapping[1] = 17;  /* CC17: General Purpose 2 (Y-axis) */
 		data->patches[p].cc_mapping[2] = 18;  /* CC18: General Purpose 3 (Z-axis) */
 		data->patches[p].cc_mapping[3] = 19;  /* CC19: General Purpose 4 (Roll) */
 		data->patches[p].cc_mapping[4] = 20;  /* CC20: General Purpose 5 (Pitch) */
 		data->patches[p].cc_mapping[5] = 21;  /* CC21: General Purpose 6 (Yaw) */
+
+		data->patches[p].accel_min[0] = 0;  /* CC16: Min value (X-axis) */
+		data->patches[p].accel_min[1] = 0;  /* CC17: Min value (Y-axis) */
+		data->patches[p].accel_min[2] = 0;  /* CC18: Min value (Z-axis) */
+		data->patches[p].accel_min[3] = 0;  /* CC19: Min value (Roll) */
+		data->patches[p].accel_min[4] = 0;  /* CC20: Min value (Pitch) */
+		data->patches[p].accel_min[5] = 0;  /* CC21: Min value (Yaw) */
+
+		data->patches[p].accel_max[0] = 127;  /* CC16: Max value (X-axis) */
+		data->patches[p].accel_max[1] = 127;  /* CC17: Max value (Y-axis) */
+		data->patches[p].accel_max[2] = 127;  /* CC18: Max value (Z-axis) */
+		data->patches[p].accel_max[3] = 127;  /* CC19: Max value (Roll) */
+		data->patches[p].accel_max[4] = 127;  /* CC20: Max value (Pitch) */
+		data->patches[p].accel_max[5] = 127;  /* CC21: Max value (Yaw) */
+
 		data->patches[p].led_mode = 0;          /* Normal mode */
-		data->patches[p].accel_deadzone = 100;  /* 100 units */
+		data->patches[p].accel_deadzone = 1;  /* MIDI CC change threshold (1 = send on any change) */
 		snprintf(data->patches[p].patch_name, sizeof(data->patches[p].patch_name), 
 		         "Patch %d", p);
 	}

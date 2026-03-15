@@ -120,6 +120,45 @@ static void reload_config(void)
 			current_config.patches[patch_idx].cc_mapping[1],
 			current_config.patches[patch_idx].cc_mapping[2]);
 	}
+	
+	/* Update accelerometer to MIDI mapping based on accel_scale and accel_offset */
+	/* accel_scale represents the G-force range (in milli-g) that maps to full MIDI range */
+	/* accel_offset shifts the center point (what accelerometer value maps to MIDI 64) */
+	int16_t scale_x = current_config.global.accel_scale[0];
+	int16_t scale_y = current_config.global.accel_scale[1];
+	int16_t scale_z = current_config.global.accel_scale[2];
+	int16_t offset_x = current_config.global.accel_offset[0];
+	int16_t offset_y = current_config.global.accel_offset[1];
+	int16_t offset_z = current_config.global.accel_offset[2];
+	
+	/* Clamp scale values to reasonable range (100mg to 4000mg = 0.1g to 4g) */
+	if (scale_x < 100) scale_x = 100;
+	if (scale_x > 4000) scale_x = 4000;
+	if (scale_y < 100) scale_y = 100;
+	if (scale_y > 4000) scale_y = 4000;
+	if (scale_z < 100) scale_z = 100;
+	if (scale_z > 4000) scale_z = 4000;
+	
+	/* Clamp offset to reasonable range (±2000mg) */
+	if (offset_x < -2000) offset_x = -2000;
+	if (offset_x > 2000) offset_x = 2000;
+	if (offset_y < -2000) offset_y = -2000;
+	if (offset_y > 2000) offset_y = 2000;
+	if (offset_z < -2000) offset_z = -2000;
+	if (offset_z > 2000) offset_z = 2000;
+	
+	/* Apply offset and scale to create mapping */
+	/* (offset - scale) → MIDI 0, (offset) → MIDI 64, (offset + scale) → MIDI 127 */
+	accel_mapping_init_linear(&x_axis_config, offset_x - scale_x, offset_x + scale_x);
+	accel_mapping_init_linear(&y_axis_config, offset_y - scale_y, offset_y + scale_y);
+	accel_mapping_init_linear(&z_axis_config, offset_z - scale_z, offset_z + scale_z);
+	
+	LOG_INF("Accel mapping: X=[%d:%d]mg, Y=[%d:%d]mg, Z=[%d:%d]mg -> MIDI[0:127]",
+		offset_x - scale_x, offset_x + scale_x,
+		offset_y - scale_y, offset_y + scale_y,
+		offset_z - scale_z, offset_z + scale_z);
+	LOG_INF("Center points: X=%dmg, Y=%dmg, Z=%dmg -> MIDI 64",
+		offset_x, offset_y, offset_z);
 }
 
 /* UART ISR for interrupt-driven MIDI transmission */
@@ -369,10 +408,14 @@ int send_midi_realtime(uint8_t rt_byte)
 /* Process acceleration data and convert to MIDI CC */
 static void process_accel_data(const struct accel_data *accel, int guitar_id)
 {
+	static uint8_t last_cc_x = 255;  /* Initialize to invalid value to force first send */
+	static uint8_t last_cc_y = 255;
+	static uint8_t last_cc_z = 255;
+	
 	uint8_t cc_x, cc_y, cc_z;
+	bool send_x = false, send_y = false, send_z = false;
 	
 	/* Convert acceleration to MIDI CC values using custom mappings */
-	/* X: -1027mg to -431mg, Y: -796mg to 111mg, Z: 61mg to -827mg (inverted) */
 	cc_x = accel_to_midi_cc(accel->x, &x_axis_config);
 	cc_y = accel_to_midi_cc(accel->y, &y_axis_config);
 	cc_z = accel_to_midi_cc(accel->z, &z_axis_config);
@@ -381,17 +424,48 @@ static void process_accel_data(const struct accel_data *accel, int guitar_id)
 	uint8_t patch_idx = current_config.global.default_patch;
 	if (patch_idx >= 16) patch_idx = 0;
 	
-	/* Send MIDI CC messages using configured channel and CC numbers */
-	send_midi_cc(current_config.global.midi_channel, current_config.patches[patch_idx].cc_mapping[0], cc_x);
-	send_midi_cc(current_config.global.midi_channel, current_config.patches[patch_idx].cc_mapping[1], cc_y);
-	send_midi_cc(current_config.global.midi_channel, current_config.patches[patch_idx].cc_mapping[2], cc_z);
+	/* Get deadzone threshold from patch config */
+	int16_t deadzone = current_config.patches[patch_idx].accel_deadzone;
+	if (deadzone < 0) deadzone = 0;  /* Sanity check */
 	
-	/* Brief LED flash to indicate MIDI activity */
-	ui_led_flash(UI_LED_WHITE, 30);  /* 30ms white flash */
+	/* Check if CC values have changed by more than deadzone threshold */
+	int16_t delta_x = (int16_t)cc_x - (int16_t)last_cc_x;
+	int16_t delta_y = (int16_t)cc_y - (int16_t)last_cc_y;
+	int16_t delta_z = (int16_t)cc_z - (int16_t)last_cc_z;
+	
+	/* Make deltas absolute */
+	if (delta_x < 0) delta_x = -delta_x;
+	if (delta_y < 0) delta_y = -delta_y;
+	if (delta_z < 0) delta_z = -delta_z;
+	
+	/* Only send if change exceeds deadzone (or first time: last_cc == 255) */
+	send_x = (last_cc_x == 255) || (delta_x >= deadzone);
+	send_y = (last_cc_y == 255) || (delta_y >= deadzone);
+	send_z = (last_cc_z == 255) || (delta_z >= deadzone);
+	
+	/* Send MIDI CC messages only for axes that changed significantly */
+	if (send_x) {
+		send_midi_cc(current_config.global.midi_channel, current_config.patches[patch_idx].cc_mapping[0], cc_x);
+		last_cc_x = cc_x;
+	}
+	if (send_y) {
+		send_midi_cc(current_config.global.midi_channel, current_config.patches[patch_idx].cc_mapping[1], cc_y);
+		last_cc_y = cc_y;
+	}
+	if (send_z) {
+		send_midi_cc(current_config.global.midi_channel, current_config.patches[patch_idx].cc_mapping[2], cc_z);
+		last_cc_z = cc_z;
+	}
+	
+	/* Brief LED flash to indicate MIDI activity (only if something was sent) */
+	if (send_x || send_y || send_z) {
+		ui_led_flash(UI_LED_WHITE, 30);  /* 30ms white flash */
+	}
 	
 #if BLE_DEBUG
-	LOG_INF("Accel: x=%d y=%d z=%d -> MIDI: %d %d %d", 
-		accel->x, accel->y, accel->z, cc_x, cc_y, cc_z);
+	LOG_INF("Accel: x=%d y=%d z=%d -> MIDI: %d %d %d %s", 
+		accel->x, accel->y, accel->z, cc_x, cc_y, cc_z,
+		(send_x || send_y || send_z) ? "" : "(filtered)");
 #endif
 }
 
@@ -1194,11 +1268,37 @@ int main(void)
 	}
 
 	/* Initialize accelerometer to MIDI mapping configurations */
-	/* Based on captured data: X[837:935], Y[56:294], Z[223:665] */
-	accel_mapping_init_linear(&x_axis_config, 837, 935);
-	accel_mapping_init_linear(&y_axis_config, 56, 294);
-	accel_mapping_init_linear(&z_axis_config, 223, 665);
-	LOG_INF("Accel mapping: X[837:935] Y[56:294] Z[223:665] -> MIDI[0:127]");
+	/* Load scale and offset from config (will be applied in reload_config) */
+	int16_t scale_x = current_config.global.accel_scale[0];
+	int16_t scale_y = current_config.global.accel_scale[1];
+	int16_t scale_z = current_config.global.accel_scale[2];
+	int16_t offset_x = current_config.global.accel_offset[0];
+	int16_t offset_y = current_config.global.accel_offset[1];
+	int16_t offset_z = current_config.global.accel_offset[2];
+	
+	/* Clamp scale values to reasonable range (100mg to 4000mg = 0.1g to 4g) */
+	if (scale_x < 100) scale_x = 100;
+	if (scale_x > 4000) scale_x = 4000;
+	if (scale_y < 100) scale_y = 100;
+	if (scale_y > 4000) scale_y = 4000;
+	if (scale_z < 100) scale_z = 100;
+	if (scale_z > 4000) scale_z = 4000;
+	
+	/* Clamp offset to reasonable range (±2000mg) */
+	if (offset_x < -2000) offset_x = -2000;
+	if (offset_x > 2000) offset_x = 2000;
+	if (offset_y < -2000) offset_y = -2000;
+	if (offset_y > 2000) offset_y = 2000;
+	if (offset_z < -2000) offset_z = -2000;
+	if (offset_z > 2000) offset_z = 2000;
+	
+	accel_mapping_init_linear(&x_axis_config, offset_x - scale_x, offset_x + scale_x);
+	accel_mapping_init_linear(&y_axis_config, offset_y - scale_y, offset_y + scale_y);
+	accel_mapping_init_linear(&z_axis_config, offset_z - scale_z, offset_z + scale_z);
+	LOG_INF("Accel mapping: X=[%d:%d]mg, Y=[%d:%d]mg, Z=[%d:%d]mg -> MIDI[0:127]",
+		offset_x - scale_x, offset_x + scale_x,
+		offset_y - scale_y, offset_y + scale_y,
+		offset_z - scale_z, offset_z + scale_z);
 
 	bt_hogp_init(&hogp, &hogp_init_params);
 

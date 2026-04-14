@@ -1,0 +1,91 @@
+# Makefile for Virtual Ports Feature Tests
+
+CC = gcc
+CFLAGS = -Wall -Wextra -std=c11 -g -O0 -I../src
+LDFLAGS = -lm
+
+# Test targets
+TARGET_VPORT = test_virtual_ports
+TARGET_FUNC = test_function_units
+TARGET_TOPO = test_topology_processor
+
+# Sources
+SRC_DIR = ../src
+TEST_VPORT_SRC = test_virtual_ports.c
+TEST_FUNC_SRC = test_function_units.c
+TEST_TOPO_SRC = test_topology_processor.c
+
+VPORT_SRC = $(SRC_DIR)/virtual_ports.c
+FUNC_SRC = $(SRC_DIR)/function_units.c
+TOPO_CONFIG_SRC = $(SRC_DIR)/topology_config.c
+TOPO_PROC_SRC = $(SRC_DIR)/topology_processor.c
+
+# Source combinations
+SOURCES_VPORT = $(TEST_VPORT_SRC) $(VPORT_SRC)
+SOURCES_FUNC = $(TEST_FUNC_SRC) $(FUNC_SRC)
+SOURCES_TOPO = $(TEST_TOPO_SRC) $(VPORT_SRC) $(FUNC_SRC) $(TOPO_CONFIG_SRC) $(TOPO_PROC_SRC)
+
+.PHONY: all clean test test_vport test_func test_topo help
+
+all: $(TARGET_VPORT) $(TARGET_FUNC) $(TARGET_TOPO)
+
+# Build individual test executables
+$(TARGET_VPORT): $(SOURCES_VPORT)
+	@echo "Building Virtual Ports tests..."
+	$(CC) $(CFLAGS) -o $(TARGET_VPORT) $(SOURCES_VPORT) $(LDFLAGS)
+	@echo "✓ Build complete: ./$(TARGET_VPORT)"
+
+$(TARGET_FUNC): $(SOURCES_FUNC)
+	@echo "Building Function Units tests..."
+	$(CC) $(CFLAGS) -o $(TARGET_FUNC) $(SOURCES_FUNC) $(LDFLAGS)
+	@echo "✓ Build complete: ./$(TARGET_FUNC)"
+
+$(TARGET_TOPO): $(SOURCES_TOPO)
+	@echo "Building Topology Processor tests..."
+	$(CC) $(CFLAGS) -o $(TARGET_TOPO) $(SOURCES_TOPO) $(LDFLAGS)
+	@echo "✓ Build complete: ./$(TARGET_TOPO)"
+
+# Run individual test suites
+test_vport: $(TARGET_VPORT)
+	@echo ""
+	@./$(TARGET_VPORT)
+
+test_func: $(TARGET_FUNC)
+	@echo ""
+	@./$(TARGET_FUNC)
+
+test_topo: $(TARGET_TOPO)
+	@echo ""
+	@./$(TARGET_TOPO)
+
+# Run all tests
+test: $(TARGET_VPORT) $(TARGET_FUNC) $(TARGET_TOPO)
+	@echo ""
+	@echo "Running Virtual Ports tests..."
+	@./$(TARGET_VPORT) || exit 1
+	@echo ""
+	@echo "Running Function Units tests..."
+	@./$(TARGET_FUNC) || exit 1
+	@echo ""
+	@echo "Running Topology Processor tests..."
+	@./$(TARGET_TOPO) || exit 1
+	@echo ""
+	@echo "============================================================"
+	@echo "ALL TESTS PASSED"
+	@echo "============================================================"
+
+clean:
+	@echo "Cleaning build artifacts..."
+	rm -f $(TARGET_VPORT) $(TARGET_FUNC) $(TARGET_TOPO)
+	rm -rf $(TARGET_VPORT).dSYM $(TARGET_FUNC).dSYM $(TARGET_TOPO).dSYM
+	@echo "✓ Clean complete"
+
+help:
+	@echo "Virtual Ports Feature Test Targets:"
+	@echo "  make              - Build all test executables"
+	@echo "  make test         - Build and run all tests"
+	@echo "  make test_vport   - Run virtual ports tests only"
+	@echo "  make test_func    - Run function units tests only"
+	@echo "  make test_topo    - Run topology processor tests only"
+	@echo "  make clean        - Remove build artifacts"
+	@echo "  make help         - Show this help message"

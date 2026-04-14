@@ -8,6 +8,8 @@
 
 #include <zephyr/kernel.h>
 #include <stdint.h>
+#include "topology_config.h"
+#include "function_units.h"
 
 /**
  * @brief Configuration Storage Module
@@ -25,6 +27,9 @@
 
 /* Configuration data structure version */
 #define CONFIG_VERSION 1
+
+/* Number of patches supported */
+#define NUM_PATCHES 4
 
 /* Maximum configuration data size (excluding header) */
 #define CONFIG_DATA_MAX_SIZE 4096
@@ -86,24 +91,22 @@ struct global_config {
  * performances, songs, or sound designs.
  */
 struct patch_config {
-	/* MIDI mapping configuration */
-	uint8_t velocity_curve;        /* Velocity curve type (0-3) */
-	uint8_t cc_mapping[6];         /* CC numbers for 6 axes */
-	
 	/* LED configuration */
 	uint8_t led_mode;              /* LED mode (0-3) */
 	
-	/* Accelerometer mapping */
-	int16_t accel_deadzone;        /* Deadzone threshold */
-	uint8_t accel_min[6];          /* Minimum CC value for each axis (0-127) */
-	uint8_t accel_max[6];          /* Maximum CC value for each axis (0-127) */
-	uint8_t accel_invert;          /* Inversion bitfield: bit 0-5 for axes 0-5 */
+	/* MIDI threshold */
+	int16_t midi_deadzone;         /* MIDI CC change threshold for transmission */
 	
 	/* Patch metadata */
 	char patch_name[32];           /* Patch name (null-terminated) */
 	
+	/* Virtual ports topology configuration */
+	struct topology_instance topologies[MAX_TOPOLOGY_INSTANCES];  /* 6 × 12 = 72 bytes */
+	struct function_unit functions[MAX_FUNCTION_UNITS];           /* 8 × 16 = 128 bytes */
+	uint8_t default_mixer_type;                                   /* Default mixing algorithm */
+	
 	/* Reserved for future patch settings */
-	uint8_t reserved[53];          /* Future expansion (53 bytes for 4-byte alignment) */
+	uint8_t reserved[19];          /* Future expansion (19 bytes for 4-byte alignment) */
 } __packed;
 
 /**
@@ -112,12 +115,12 @@ struct patch_config {
  * Contains both global and patch-specific settings.
  * This structure is stored in flash and survives power cycles.
  * 
- * NOTE: Supports up to 16 patches. The active patch is selected
+ * NOTE: Supports up to NUM_PATCHES patches. The active patch is selected
  * via global.default_patch index.
  */
 struct config_data {
 	struct global_config global;   /* Global system settings */
-	struct patch_config patches[16]; /* Array of 16 patches */
+	struct patch_config patches[NUM_PATCHES]; /* Array of patches */
 	
 	/* Reserved for future use */
 	uint8_t reserved[32];          /* Additional expansion space */

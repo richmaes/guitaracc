@@ -21,6 +21,10 @@
 #include "ui_led.h"
 #include "ui_interface.h"
 #include "config_storage.h"
+#include "topology_processor.h"
+#include "virtual_ports.h"
+#include "topology_config.h"
+#include "function_units.h"
 
 LOG_MODULE_REGISTER(basestation, LOG_LEVEL_DBG);
 
@@ -93,9 +97,8 @@ struct guitar_connection {
 static struct guitar_connection guitar_conn = {0};
 
 /* Accelerometer to MIDI mapping configurations */
-static struct accel_mapping_config x_axis_config;
-static struct accel_mapping_config y_axis_config;
-static struct accel_mapping_config z_axis_config;
+/* Virtual ports topology processor */
+static struct topology_processor topo_proc;
 
 /* Current configuration */
 static struct config_data current_config;
@@ -112,53 +115,26 @@ static void reload_config(void)
 		config_storage_get_hardcoded_defaults(&current_config);
 	} else {
 		uint8_t patch_idx = current_config.global.default_patch;
-		if (patch_idx >= 16) patch_idx = 0;
-		LOG_INF("Config reloaded: MIDI ch=%d, Patch %d, CC=[%d,%d,%d]",
+		if (patch_idx >= NUM_PATCHES) patch_idx = 0;
+		LOG_INF("Config reloaded: MIDI ch=%d, Patch %d",
 			current_config.global.midi_channel + 1,
-			patch_idx,
-			current_config.patches[patch_idx].cc_mapping[0],
-			current_config.patches[patch_idx].cc_mapping[1],
-			current_config.patches[patch_idx].cc_mapping[2]);
+			patch_idx);
 	}
 	
-	/* Update accelerometer to MIDI mapping based on accel_scale and accel_offset */
-	/* accel_scale represents the G-force range (in milli-g) that maps to full MIDI range */
-	/* accel_offset shifts the center point (what accelerometer value maps to MIDI 64) */
-	int16_t scale_x = current_config.global.accel_scale[0];
-	int16_t scale_y = current_config.global.accel_scale[1];
-	int16_t scale_z = current_config.global.accel_scale[2];
-	int16_t offset_x = current_config.global.accel_offset[0];
-	int16_t offset_y = current_config.global.accel_offset[1];
-	int16_t offset_z = current_config.global.accel_offset[2];
+	/* Update virtual ports topology processor */
+	uint8_t patch_idx = current_config.global.default_patch;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
 	
-	/* Clamp scale values to reasonable range (100mg to 4000mg = 0.1g to 4g) */
-	if (scale_x < 100) scale_x = 100;
-	if (scale_x > 4000) scale_x = 4000;
-	if (scale_y < 100) scale_y = 100;
-	if (scale_y > 4000) scale_y = 4000;
-	if (scale_z < 100) scale_z = 100;
-	if (scale_z > 4000) scale_z = 4000;
+	/* Reconfigure topology processor from patch */
+	struct patch_topology_config *topo_config = (struct patch_topology_config *)&current_config.patches[patch_idx].topologies[0];
+	topo_proc_init(&topo_proc, topo_config);
 	
-	/* Clamp offset to reasonable range (±2000mg) */
-	if (offset_x < -2000) offset_x = -2000;
-	if (offset_x > 2000) offset_x = 2000;
-	if (offset_y < -2000) offset_y = -2000;
-	if (offset_y > 2000) offset_y = 2000;
-	if (offset_z < -2000) offset_z = -2000;
-	if (offset_z > 2000) offset_z = 2000;
+	/* Update function configurations */
+	for (int i = 0; i < MAX_FUNCTION_UNITS; i++) {
+		topo_proc_set_function(&topo_proc, i, &current_config.patches[patch_idx].functions[i]);
+	}
 	
-	/* Apply offset and scale to create mapping */
-	/* (offset - scale) → MIDI 0, (offset) → MIDI 64, (offset + scale) → MIDI 127 */
-	accel_mapping_init_linear(&x_axis_config, offset_x - scale_x, offset_x + scale_x);
-	accel_mapping_init_linear(&y_axis_config, offset_y - scale_y, offset_y + scale_y);
-	accel_mapping_init_linear(&z_axis_config, offset_z - scale_z, offset_z + scale_z);
-	
-	LOG_INF("Accel mapping: X=[%d:%d]mg, Y=[%d:%d]mg, Z=[%d:%d]mg -> MIDI[0:127]",
-		offset_x - scale_x, offset_x + scale_x,
-		offset_y - scale_y, offset_y + scale_y,
-		offset_z - scale_z, offset_z + scale_z);
-	LOG_INF("Center points: X=%dmg, Y=%dmg, Z=%dmg -> MIDI 64",
-		offset_x, offset_y, offset_z);
+	LOG_INF("Virtual ports topology reloaded for patch %d", patch_idx);
 }
 
 /* UART ISR for interrupt-driven MIDI transmission */
@@ -405,67 +381,62 @@ int send_midi_realtime(uint8_t rt_byte)
 	return queue_midi_rt_bytes(&rt_byte, 1);
 }
 
-/* Process acceleration data and convert to MIDI CC */
+/* Process acceleration data and convert to MIDI CC through topology processor */
 static void process_accel_data(const struct accel_data *accel, int guitar_id)
 {
-	static uint8_t last_cc_x = 255;  /* Initialize to invalid value to force first send */
-	static uint8_t last_cc_y = 255;
-	static uint8_t last_cc_z = 255;
-	
-	uint8_t cc_x, cc_y, cc_z;
-	bool send_x = false, send_y = false, send_z = false;
-	
-	/* Convert acceleration to MIDI CC values using custom mappings */
-	cc_x = accel_to_midi_cc(accel->x, &x_axis_config);
-	cc_y = accel_to_midi_cc(accel->y, &y_axis_config);
-	cc_z = accel_to_midi_cc(accel->z, &z_axis_config);
-	
 	/* Get active patch index */
 	uint8_t patch_idx = current_config.global.default_patch;
-	if (patch_idx >= 16) patch_idx = 0;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
 	
 	/* Get deadzone threshold from patch config */
-	int16_t deadzone = current_config.patches[patch_idx].accel_deadzone;
+	int16_t deadzone = current_config.patches[patch_idx].midi_deadzone;
 	if (deadzone < 0) deadzone = 0;  /* Sanity check */
 	
-	/* Check if CC values have changed by more than deadzone threshold */
-	int16_t delta_x = (int16_t)cc_x - (int16_t)last_cc_x;
-	int16_t delta_y = (int16_t)cc_y - (int16_t)last_cc_y;
-	int16_t delta_z = (int16_t)cc_z - (int16_t)last_cc_z;
+	/* Prepare accelerometer input array (6 axes: X, Y, Z, Roll, Pitch, Yaw) */
+	int16_t accel_values[6] = {accel->x, accel->y, accel->z, 0, 0, 0};
 	
-	/* Make deltas absolute */
-	if (delta_x < 0) delta_x = -delta_x;
-	if (delta_y < 0) delta_y = -delta_y;
-	if (delta_z < 0) delta_z = -delta_z;
+	/* Set inputs and execute topology */
+	topo_proc_set_accel_inputs(&topo_proc, accel_values);
+	topo_proc_execute(&topo_proc);
 	
-	/* Only send if change exceeds deadzone (or first time: last_cc == 255) */
-	send_x = (last_cc_x == 255) || (delta_x >= deadzone);
-	send_y = (last_cc_y == 255) || (delta_y >= deadzone);
-	send_z = (last_cc_z == 255) || (delta_z >= deadzone);
+	/* Get MIDI outputs and send changed values */
+	uint8_t midi_outputs[MAX_MIDI_OUTPUTS];
+	topo_proc_get_all_midi_outputs(&topo_proc, midi_outputs);
 	
-	/* Send MIDI CC messages only for axes that changed significantly */
-	if (send_x) {
-		send_midi_cc(current_config.global.midi_channel, current_config.patches[patch_idx].cc_mapping[0], cc_x);
-		last_cc_x = cc_x;
+	/* Send MIDI CC messages for each configured output */
+	static uint8_t last_midi_outputs[MAX_MIDI_OUTPUTS] = {255, 255, 255, 255, 255, 255};
+	bool sent_any = false;
+	
+	for (int i = 0; i < MAX_MIDI_OUTPUTS; i++) {
+		/* Get configured CC number from topology */
+		uint8_t cc_num = 16 + i;  /* Default CC 16-21 */
+		if (i < MAX_TOPOLOGY_INSTANCES && 
+		    current_config.patches[patch_idx].topologies[i].enabled) {
+			cc_num = current_config.patches[patch_idx].topologies[i].midi_outputs[0];
+		}
+		
+		/* Send if value changed (deadzone check) */
+		int16_t delta = (int16_t)midi_outputs[i] - (int16_t)last_midi_outputs[i];
+		if (delta < 0) delta = -delta;
+		
+		if (last_midi_outputs[i] == 255 || delta >= deadzone) {
+			send_midi_cc(current_config.global.midi_channel, cc_num, midi_outputs[i]);
+			last_midi_outputs[i] = midi_outputs[i];
+			sent_any = true;
+		}
 	}
-	if (send_y) {
-		send_midi_cc(current_config.global.midi_channel, current_config.patches[patch_idx].cc_mapping[1], cc_y);
-		last_cc_y = cc_y;
-	}
-	if (send_z) {
-		send_midi_cc(current_config.global.midi_channel, current_config.patches[patch_idx].cc_mapping[2], cc_z);
-		last_cc_z = cc_z;
-	}
 	
-	/* Brief LED flash to indicate MIDI activity (only if something was sent) */
-	if (send_x || send_y || send_z) {
+	/* Brief LED flash to indicate MIDI activity */
+	if (sent_any) {
 		ui_led_flash(UI_LED_WHITE, 30);  /* 30ms white flash */
 	}
 	
 #if BLE_DEBUG
-	LOG_INF("Accel: x=%d y=%d z=%d -> MIDI: %d %d %d %s", 
-		accel->x, accel->y, accel->z, cc_x, cc_y, cc_z,
-		(send_x || send_y || send_z) ? "" : "(filtered)");
+	LOG_INF("Accel: x=%d y=%d z=%d -> Topology", 
+		accel->x, accel->y, accel->z);
+	LOG_INF("MIDI out: [%d,%d,%d,%d,%d,%d]",
+		midi_outputs[0], midi_outputs[1], midi_outputs[2],
+		midi_outputs[3], midi_outputs[4], midi_outputs[5]);
 #endif
 }
 
@@ -1223,13 +1194,10 @@ int main(void)
 		err = config_storage_load(&current_config);
 		if (err == 0) {
 			uint8_t patch_idx = current_config.global.default_patch;
-			if (patch_idx >= 16) patch_idx = 0;
-			LOG_INF("Loaded config: MIDI ch=%d, Patch %d, CC=[%d,%d,%d]",
+			if (patch_idx >= NUM_PATCHES) patch_idx = 0;
+			LOG_INF("Loaded config: MIDI ch=%d, Patch %d",
 				current_config.global.midi_channel + 1,
-				patch_idx,
-				current_config.patches[patch_idx].cc_mapping[0],
-				current_config.patches[patch_idx].cc_mapping[1],
-				current_config.patches[patch_idx].cc_mapping[2]);
+				patch_idx);
 		} else {
 			/* Load hardcoded defaults if config load fails */
 			config_storage_get_hardcoded_defaults(&current_config);
@@ -1267,38 +1235,20 @@ int main(void)
 		ui_config_reload_callback = reload_config;
 	}
 
-	/* Initialize accelerometer to MIDI mapping configurations */
-	/* Load scale and offset from config (will be applied in reload_config) */
-	int16_t scale_x = current_config.global.accel_scale[0];
-	int16_t scale_y = current_config.global.accel_scale[1];
-	int16_t scale_z = current_config.global.accel_scale[2];
-	int16_t offset_x = current_config.global.accel_offset[0];
-	int16_t offset_y = current_config.global.accel_offset[1];
-	int16_t offset_z = current_config.global.accel_offset[2];
+	/* Initialize virtual ports topology processor */
+	uint8_t patch_idx = current_config.global.default_patch;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
 	
-	/* Clamp scale values to reasonable range (100mg to 4000mg = 0.1g to 4g) */
-	if (scale_x < 100) scale_x = 100;
-	if (scale_x > 4000) scale_x = 4000;
-	if (scale_y < 100) scale_y = 100;
-	if (scale_y > 4000) scale_y = 4000;
-	if (scale_z < 100) scale_z = 100;
-	if (scale_z > 4000) scale_z = 4000;
+	/* Configure virtual ports system from patch configuration */
+	struct patch_topology_config *topo_config = (struct patch_topology_config *)&current_config.patches[patch_idx].topologies[0];
+	topo_proc_init(&topo_proc, topo_config);
 	
-	/* Clamp offset to reasonable range (±2000mg) */
-	if (offset_x < -2000) offset_x = -2000;
-	if (offset_x > 2000) offset_x = 2000;
-	if (offset_y < -2000) offset_y = -2000;
-	if (offset_y > 2000) offset_y = 2000;
-	if (offset_z < -2000) offset_z = -2000;
-	if (offset_z > 2000) offset_z = 2000;
+	/* Copy function configurations */
+	for (int i = 0; i < MAX_FUNCTION_UNITS; i++) {
+		topo_proc_set_function(&topo_proc, i, &current_config.patches[patch_idx].functions[i]);
+	}
 	
-	accel_mapping_init_linear(&x_axis_config, offset_x - scale_x, offset_x + scale_x);
-	accel_mapping_init_linear(&y_axis_config, offset_y - scale_y, offset_y + scale_y);
-	accel_mapping_init_linear(&z_axis_config, offset_z - scale_z, offset_z + scale_z);
-	LOG_INF("Accel mapping: X=[%d:%d]mg, Y=[%d:%d]mg, Z=[%d:%d]mg -> MIDI[0:127]",
-		offset_x - scale_x, offset_x + scale_x,
-		offset_y - scale_y, offset_y + scale_y,
-		offset_z - scale_z, offset_z + scale_z);
+	LOG_INF("Virtual ports topology processor initialized for patch %d", patch_idx);
 
 	bt_hogp_init(&hogp, &hogp_init_params);
 

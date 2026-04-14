@@ -18,8 +18,11 @@ project(guitaracc_basestation)
 target_sources(app PRIVATE 
     src/main.c
     src/midi_logic.c
-    src/accel_mapping.c
     src/ui_led.c
     src/ui_interface_shell.c
     src/config_storage.c
+    src/virtual_ports.c
+    src/topology_config.c
+    src/function_units.c
+    src/topology_processor.c
 )

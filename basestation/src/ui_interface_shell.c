@@ -5,6 +5,8 @@
 
 #include "ui_interface.h"
 #include "config_storage.h"
+#include "topology_config.h"
+#include "function_units.h"
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/logging/log.h>
@@ -68,45 +70,20 @@ static int cmd_config_show(const struct shell *sh, size_t argc, char **argv)
 	shell_print(sh, "  Scan interval: %d ms", cfg.global.scan_interval_ms);
 	shell_print(sh, "LED:");
 	shell_print(sh, "  Brightness: %d", cfg.global.led_brightness);
-	shell_print(sh, "Accelerometer:");
-	shell_print(sh, "  Scale (mg): X=±%d, Y=±%d, Z=±%d (full scale G-force → MIDI 0-127)",
-		cfg.global.accel_scale[0], cfg.global.accel_scale[1], cfg.global.accel_scale[2]);
-	shell_print(sh, "  Offset (mg): X=%d, Y=%d, Z=%d (center point → MIDI 64)",
-		cfg.global.accel_offset[0], cfg.global.accel_offset[1], cfg.global.accel_offset[2]);
-	shell_print(sh, "  Ranges: X=[%d:%d], Y=[%d:%d], Z=[%d:%d] mg → MIDI[0:127]",
-		cfg.global.accel_offset[0] - cfg.global.accel_scale[0],
-		cfg.global.accel_offset[0] + cfg.global.accel_scale[0],
-		cfg.global.accel_offset[1] - cfg.global.accel_scale[1],
-		cfg.global.accel_offset[1] + cfg.global.accel_scale[1],
-		cfg.global.accel_offset[2] - cfg.global.accel_scale[2],
-		cfg.global.accel_offset[2] + cfg.global.accel_scale[2]);
 	shell_print(sh, "Filters:");
 	shell_print(sh, "  Running average: %s", cfg.global.running_average_enable ? "Enabled" : "Disabled");
 	shell_print(sh, "  Average depth: %d samples", cfg.global.running_average_depth);
 	
 	uint8_t patch_idx = cfg.global.default_patch;
-	if (patch_idx >= 16) patch_idx = 0;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
 	
 	shell_print(sh, "\n--- PATCH SETTINGS (Patch %d) ---", patch_idx);
 	shell_print(sh, "Name: %s", cfg.patches[patch_idx].patch_name);
 	shell_print(sh, "MIDI:");
-	shell_print(sh, "  Velocity curve: %d", cfg.patches[patch_idx].velocity_curve);
-	shell_print(sh, "  CC mapping: [%d, %d, %d, %d, %d, %d]",
-		cfg.patches[patch_idx].cc_mapping[0], cfg.patches[patch_idx].cc_mapping[1], cfg.patches[patch_idx].cc_mapping[2],
-		cfg.patches[patch_idx].cc_mapping[3], cfg.patches[patch_idx].cc_mapping[4], cfg.patches[patch_idx].cc_mapping[5]);
 	shell_print(sh, "LED:");
 	shell_print(sh, "  Mode: %d", cfg.patches[patch_idx].led_mode);
 	shell_print(sh, "Accelerometer:");
-	shell_print(sh, "  Deadzone: %d", cfg.patches[patch_idx].accel_deadzone);
-	shell_print(sh, "  Min CC: [%d, %d, %d, %d, %d, %d]",
-		cfg.patches[patch_idx].accel_min[0], cfg.patches[patch_idx].accel_min[1],
-		cfg.patches[patch_idx].accel_min[2], cfg.patches[patch_idx].accel_min[3],
-		cfg.patches[patch_idx].accel_min[4], cfg.patches[patch_idx].accel_min[5]);
-	shell_print(sh, "  Max CC: [%d, %d, %d, %d, %d, %d]",
-		cfg.patches[patch_idx].accel_max[0], cfg.patches[patch_idx].accel_max[1],
-		cfg.patches[patch_idx].accel_max[2], cfg.patches[patch_idx].accel_max[3],
-		cfg.patches[patch_idx].accel_max[4], cfg.patches[patch_idx].accel_max[5]);
-	shell_print(sh, "  Invert: 0x%02X", cfg.patches[patch_idx].accel_invert);
+	shell_print(sh, "  Deadzone: %d", cfg.patches[patch_idx].midi_deadzone);
 	
 	return 0;
 }
@@ -183,6 +160,7 @@ static int cmd_config_midi_ch(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+/* Legacy function - removed (cc_mapping field no longer exists)
 static int cmd_config_cc(const struct shell *sh, size_t argc, char **argv)
 {
 	if (argc != 3) {
@@ -212,7 +190,7 @@ static int cmd_config_cc(const struct shell *sh, size_t argc, char **argv)
 	}
 	
 	uint8_t patch_idx = cfg.global.default_patch;
-	if (patch_idx >= 16) patch_idx = 0;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
 	
 	cfg.patches[patch_idx].cc_mapping[axis] = cc_num;
 	
@@ -224,14 +202,15 @@ static int cmd_config_cc(const struct shell *sh, size_t argc, char **argv)
 	const char *axis_names[] = {"X", "Y", "Z"};
 	shell_print(sh, "%s-axis CC set to %d (patch %d setting)", axis_names[axis], cc_num, patch_idx);
 	
-	/* Trigger config reload */
 	if (ui_config_reload_callback) {
 		ui_config_reload_callback();
 	}
 	
 	return 0;
 }
+*/
 
+/* Legacy functions - removed (accel_min, accel_max, accel_invert fields no longer exist)
 static int cmd_config_accel_min(const struct shell *sh, size_t argc, char **argv)
 {
 	if (argc != 3) {
@@ -258,7 +237,7 @@ static int cmd_config_accel_min(const struct shell *sh, size_t argc, char **argv
 	}
 	
 	uint8_t patch_idx = cfg.global.default_patch;
-	if (patch_idx >= 16) patch_idx = 0;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
 	
 	cfg.patches[patch_idx].accel_min[axis] = (uint8_t)value;
 	
@@ -302,7 +281,7 @@ static int cmd_config_accel_max(const struct shell *sh, size_t argc, char **argv
 	}
 	
 	uint8_t patch_idx = cfg.global.default_patch;
-	if (patch_idx >= 16) patch_idx = 0;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
 	
 	cfg.patches[patch_idx].accel_max[axis] = (uint8_t)value;
 	
@@ -346,7 +325,7 @@ static int cmd_config_accel_invert(const struct shell *sh, size_t argc, char **a
 	}
 	
 	uint8_t patch_idx = cfg.global.default_patch;
-	if (patch_idx >= 16) patch_idx = 0;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
 	
 	if (invert) {
 		cfg.patches[patch_idx].accel_invert |= (1 << axis);
@@ -367,6 +346,7 @@ static int cmd_config_accel_invert(const struct shell *sh, size_t argc, char **a
 	
 	return 0;
 }
+*/
 
 static int cmd_config_accel_deadzone(const struct shell *sh, size_t argc, char **argv)
 {
@@ -388,9 +368,9 @@ static int cmd_config_accel_deadzone(const struct shell *sh, size_t argc, char *
 	}
 	
 	uint8_t patch_idx = cfg.global.default_patch;
-	if (patch_idx >= 16) patch_idx = 0;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
 	
-	cfg.patches[patch_idx].accel_deadzone = (int16_t)deadzone;
+	cfg.patches[patch_idx].midi_deadzone = (int16_t)deadzone;
 	
 	if (config_storage_save(&cfg) != 0) {
 		shell_error(sh, "Error saving configuration");
@@ -407,6 +387,7 @@ static int cmd_config_accel_deadzone(const struct shell *sh, size_t argc, char *
 	return 0;
 }
 
+/* Legacy functions - removed (accel_scale and accel_offset fields no longer exist)
 static int cmd_config_accel_scale(const struct shell *sh, size_t argc, char **argv)
 {
 	if (argc != 3) {
@@ -507,7 +488,9 @@ static int cmd_config_accel_offset(const struct shell *sh, size_t argc, char **a
 	
 	return 0;
 }
+*/
 
+/* Legacy function - removed (velocity_curve field no longer exists)
 static int cmd_config_velocity_curve(const struct shell *sh, size_t argc, char **argv)
 {
 	if (argc != 2) {
@@ -528,7 +511,7 @@ static int cmd_config_velocity_curve(const struct shell *sh, size_t argc, char *
 	}
 	
 	uint8_t patch_idx = cfg.global.default_patch;
-	if (patch_idx >= 16) patch_idx = 0;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
 	
 	cfg.patches[patch_idx].velocity_curve = (uint8_t)curve;
 	
@@ -539,13 +522,13 @@ static int cmd_config_velocity_curve(const struct shell *sh, size_t argc, char *
 	
 	shell_print(sh, "Velocity curve set to %d (patch %d setting)", curve, patch_idx);
 	
-	/* Trigger config reload */
 	if (ui_config_reload_callback) {
 		ui_config_reload_callback();
 	}
 	
 	return 0;
 }
+*/
 
 static int cmd_config_scan_interval(const struct shell *sh, size_t argc, char **argv)
 {
@@ -773,25 +756,10 @@ static int cmd_config_patch(const struct shell *sh, size_t argc, char **argv)
 	
 	shell_print(sh, "\n--- PATCH %d%s ---", patch_idx, is_active ? " (ACTIVE)" : "");
 	shell_print(sh, "Name: %s", cfg.patches[patch_idx].patch_name);
-	shell_print(sh, "MIDI:");
-	shell_print(sh, "  Velocity curve: %d", cfg.patches[patch_idx].velocity_curve);
-	shell_print(sh, "  CC mapping: [%d, %d, %d, %d, %d, %d]",
-		cfg.patches[patch_idx].cc_mapping[0], cfg.patches[patch_idx].cc_mapping[1],
-		cfg.patches[patch_idx].cc_mapping[2], cfg.patches[patch_idx].cc_mapping[3],
-		cfg.patches[patch_idx].cc_mapping[4], cfg.patches[patch_idx].cc_mapping[5]);
 	shell_print(sh, "LED:");
 	shell_print(sh, "  Mode: %d", cfg.patches[patch_idx].led_mode);
 	shell_print(sh, "Accelerometer:");
-	shell_print(sh, "  Deadzone: %d", cfg.patches[patch_idx].accel_deadzone);
-	shell_print(sh, "  Min CC: [%d, %d, %d, %d, %d, %d]",
-		cfg.patches[patch_idx].accel_min[0], cfg.patches[patch_idx].accel_min[1],
-		cfg.patches[patch_idx].accel_min[2], cfg.patches[patch_idx].accel_min[3],
-		cfg.patches[patch_idx].accel_min[4], cfg.patches[patch_idx].accel_min[5]);
-	shell_print(sh, "  Max CC: [%d, %d, %d, %d, %d, %d]",
-		cfg.patches[patch_idx].accel_max[0], cfg.patches[patch_idx].accel_max[1],
-		cfg.patches[patch_idx].accel_max[2], cfg.patches[patch_idx].accel_max[3],
-		cfg.patches[patch_idx].accel_max[4], cfg.patches[patch_idx].accel_max[5]);
-	shell_print(sh, "  Invert: 0x%02X", cfg.patches[patch_idx].accel_invert);
+	shell_print(sh, "  Deadzone: %d", cfg.patches[patch_idx].midi_deadzone);
 	
 	return 0;
 }
@@ -897,19 +865,8 @@ static void print_patch_json(const struct shell *sh, const struct patch_config *
 	shell_print(sh, "      {");
 	shell_print(sh, "        \"patch_num\": %d,", patch_num);
 	shell_print(sh, "        \"patch_name\": \"%s\",", patch->patch_name);
-	shell_print(sh, "        \"velocity_curve\": %d,", patch->velocity_curve);
-	shell_print(sh, "        \"cc_mapping\": [%d, %d, %d, %d, %d, %d],",
-		    patch->cc_mapping[0], patch->cc_mapping[1], patch->cc_mapping[2],
-		    patch->cc_mapping[3], patch->cc_mapping[4], patch->cc_mapping[5]);
 	shell_print(sh, "        \"led_mode\": %d,", patch->led_mode);
-	shell_print(sh, "        \"accel_deadzone\": %d,", patch->accel_deadzone);
-	shell_print(sh, "        \"accel_min\": [%d, %d, %d, %d, %d, %d],",
-		    patch->accel_min[0], patch->accel_min[1], patch->accel_min[2],
-		    patch->accel_min[3], patch->accel_min[4], patch->accel_min[5]);
-	shell_print(sh, "        \"accel_max\": [%d, %d, %d, %d, %d, %d],",
-		    patch->accel_max[0], patch->accel_max[1], patch->accel_max[2],
-		    patch->accel_max[3], patch->accel_max[4], patch->accel_max[5]);
-	shell_print(sh, "        \"accel_invert\": %d", patch->accel_invert);
+	shell_print(sh, "        \"midi_deadzone\": %d", patch->midi_deadzone);
 	shell_print(sh, "      }%s", last ? "" : ",");
 }
 
@@ -959,12 +916,6 @@ static int cmd_config_export(const struct shell *sh, size_t argc, char **argv)
 		shell_print(sh, "      \"max_guitars\": %d,", cfg.global.max_guitars);
 		shell_print(sh, "      \"ble_scan_interval_ms\": %d,", cfg.global.scan_interval_ms);
 		shell_print(sh, "      \"led_brightness\": %d,", cfg.global.led_brightness);
-		shell_print(sh, "      \"accel_scale\": [%d, %d, %d, %d, %d, %d],",
-			    cfg.global.accel_scale[0], cfg.global.accel_scale[1], cfg.global.accel_scale[2],
-			    cfg.global.accel_scale[3], cfg.global.accel_scale[4], cfg.global.accel_scale[5]);
-		shell_print(sh, "      \"accel_offset\": [%d, %d, %d, %d, %d, %d],",
-			    cfg.global.accel_offset[0], cfg.global.accel_offset[1], cfg.global.accel_offset[2],
-			    cfg.global.accel_offset[3], cfg.global.accel_offset[4], cfg.global.accel_offset[5]);
 		shell_print(sh, "      \"running_average_enable\": %s,", json_bool(cfg.global.running_average_enable));
 		shell_print(sh, "      \"running_average_depth\": %d", cfg.global.running_average_depth);
 		shell_print(sh, "    }%s", export_patches ? "," : "");
@@ -994,6 +945,335 @@ static int cmd_config_export(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+/*
+ * Topology commands
+ */
+
+static int cmd_topo_show(const struct shell *sh, size_t argc, char **argv)
+{
+	struct config_data cfg;
+	int err = config_storage_load(&cfg);
+	if (err) {
+		shell_error(sh, "Failed to load configuration");
+		return err;
+	}
+	
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
+	
+	shell_print(sh, "Virtual Ports Topology - Patch %d [ALWAYS ACTIVE]", patch_idx);
+	shell_print(sh, "Default Mixer: %d (0=PASSTHROUGH, 1=SUM, 2=AVERAGE, 3=MAX, 4=MIN)",
+		cfg.patches[patch_idx].default_mixer_type);
+	shell_print(sh, "");
+	
+	for (int i = 0; i < MAX_TOPOLOGY_INSTANCES; i++) {
+		struct topology_instance *topo = &cfg.patches[patch_idx].topologies[i];
+		if (!topo->enabled) continue;
+		
+		shell_print(sh, "Instance %d: %s", i, topology_get_name(topo->topology_type));
+		shell_print(sh, "  Accel inputs: [%d, %d]", topo->accel_inputs[0], topo->accel_inputs[1]);
+		shell_print(sh, "  Function units: [%d, %d]", topo->func_units[0], topo->func_units[1]);
+		shell_print(sh, "  MIDI CC outputs: [%d, %d]", topo->midi_outputs[0], topo->midi_outputs[1]);
+	}
+	
+	return 0;
+}
+
+/* Legacy command - topology is now always active
+static int cmd_topo_enable(const struct shell *sh, size_t argc, char **argv)
+{
+	struct config_data cfg;
+	int err = config_storage_load(&cfg);
+	if (err) {
+		shell_error(sh, "Failed to load configuration");
+		return err;
+	}
+	
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
+	
+	int enable = atoi(argv[1]);
+	cfg.patches[patch_idx].topology_enabled = (enable != 0) ? 1 : 0;
+	
+	err = config_storage_save(&cfg);
+	if (err) {
+		shell_error(sh, "Failed to save configuration");
+		return err;
+	}
+	
+	shell_print(sh, "Virtual ports %s for patch %d", 
+		cfg.patches[patch_idx].topology_enabled ? "ENABLED" : "DISABLED",
+		patch_idx);
+	shell_print(sh, "Run 'config reload' to apply changes");
+	
+	return 0;
+}
+*/
+
+static int cmd_topo_config(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc < 4) {
+		shell_error(sh, "Usage: topo config <instance> <type> <accel> [func] [midi_cc]");
+		shell_print(sh, "  instance: 0-5");
+		shell_print(sh, "  type: 1=T1 (1 accel), 2=T2 (2 accel), 3=T3 (1 accel), 4=T4 (2 accel)");
+		shell_print(sh, "  accel: axis index 0-5 (X,Y,Z,Roll,Pitch,Yaw)");
+		shell_print(sh, "         For T2/T4: use comma-separated like '0,1' for X+Y axes");
+		shell_print(sh, "  func: function unit index 0-7 (optional)");
+		shell_print(sh, "  midi_cc: MIDI CC number 0-127 (optional)");
+		shell_print(sh, "Examples:");
+		shell_print(sh, "  topo config 0 1 0        # T1: X-axis");
+		shell_print(sh, "  topo config 1 2 0,1      # T2: X+Y axes merged");
+		return -EINVAL;
+	}
+	
+	struct config_data cfg;
+	int err = config_storage_load(&cfg);
+	if (err) {
+		shell_error(sh, "Failed to load configuration");
+		return err;
+	}
+	
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
+	
+	int instance = atoi(argv[1]);
+	int type = atoi(argv[2]);
+	
+	if (instance < 0 || instance >= MAX_TOPOLOGY_INSTANCES) {
+		shell_error(sh, "Invalid instance: %d (must be 0-%d)", instance, MAX_TOPOLOGY_INSTANCES-1);
+		return -EINVAL;
+	}
+	
+	if (type < TOPO_T1 || type > TOPO_T4) {
+		shell_error(sh, "Invalid type: %d (must be 1-4)", type);
+		return -EINVAL;
+	}
+	
+	struct topology_instance *topo = &cfg.patches[patch_idx].topologies[instance];
+	topo->topology_type = type;
+	topo->enabled = 1;
+	
+	/* Parse accelerometer inputs (may be comma-separated for T2/T4) */
+	uint8_t num_accel_inputs = topology_get_accel_input_count(type);
+	int accel0 = 0, accel1 = 0;
+	
+	if (num_accel_inputs == 2) {
+		/* T2 or T4 - need 2 inputs */
+		if (sscanf(argv[3], "%d,%d", &accel0, &accel1) != 2) {
+			shell_error(sh, "Type %s requires 2 accelerometer inputs (use comma-separated like '0,1')", 
+				topology_get_name(type));
+			return -EINVAL;
+		}
+		topo->accel_inputs[0] = accel0;
+		topo->accel_inputs[1] = accel1;
+	} else {
+		/* T1 or T3 - single input */
+		if (strchr(argv[3], ',')) {
+			shell_error(sh, "Type %s only uses 1 accelerometer input (no comma needed)", 
+				topology_get_name(type));
+			return -EINVAL;
+		}
+		topo->accel_inputs[0] = atoi(argv[3]);
+	}
+	
+	/* Validate accelerometer input indices */
+	for (int i = 0; i < num_accel_inputs; i++) {
+		if (topo->accel_inputs[i] >= MAX_ACCEL_SOURCES) {
+			shell_error(sh, "Invalid accel input: %d (must be 0-%d)", 
+				topo->accel_inputs[i], MAX_ACCEL_SOURCES-1);
+			return -EINVAL;
+		}
+	}
+	
+	/* Set function units */
+	uint8_t num_func_units = topology_get_function_count(type);
+	if (argc >= 5) {
+		/* Parse function units (may be comma-separated for T4) */
+		int func0 = 0, func1 = 0;
+		
+		if (num_func_units == 2) {
+			if (sscanf(argv[4], "%d,%d", &func0, &func1) == 2) {
+				topo->func_units[0] = func0;
+				topo->func_units[1] = func1;
+			} else if (sscanf(argv[4], "%d", &func0) == 1) {
+				/* If only one provided, use same for both */
+				topo->func_units[0] = func0;
+				topo->func_units[1] = func0;
+			}
+		} else {
+			topo->func_units[0] = atoi(argv[4]);
+		}
+	} else {
+		/* Default function units */
+		topo->func_units[0] = instance;
+		if (num_func_units == 2) {
+			topo->func_units[1] = (instance + 1) % MAX_FUNCTION_UNITS;
+		}
+	}
+	
+	/* Set MIDI outputs */
+	uint8_t num_midi_outputs = topology_get_midi_output_count(type);
+	if (argc >= 6) {
+		/* Parse MIDI outputs (may be comma-separated for T3/T4) */
+		int midi0 = 0, midi1 = 0;
+		
+		if (num_midi_outputs == 2) {
+			if (sscanf(argv[5], "%d,%d", &midi0, &midi1) == 2) {
+				topo->midi_outputs[0] = midi0;
+				topo->midi_outputs[1] = midi1;
+			} else if (sscanf(argv[5], "%d", &midi0) == 1) {
+				/* If only one provided, use consecutive CCs */
+				topo->midi_outputs[0] = midi0;
+				topo->midi_outputs[1] = midi0 + 1;
+			}
+		} else {
+			topo->midi_outputs[0] = atoi(argv[5]);
+		}
+	} else {
+		/* Default MIDI CCs */
+		topo->midi_outputs[0] = 16 + instance;
+		if (num_midi_outputs == 2) {
+			topo->midi_outputs[1] = 16 + instance + 1;
+		}
+	}
+	
+	err = config_storage_save(&cfg);
+	if (err) {
+		shell_error(sh, "Failed to save configuration");
+		return err;
+	}
+	
+	shell_print(sh, "Topology instance %d configured as %s", instance, topology_get_name(type));
+	if (num_accel_inputs == 2) {
+		shell_print(sh, "  Accel inputs: [%d, %d]", topo->accel_inputs[0], topo->accel_inputs[1]);
+	} else {
+		shell_print(sh, "  Accel input: %d", topo->accel_inputs[0]);
+	}
+	if (num_func_units == 2) {
+		shell_print(sh, "  Function units: [%d, %d]", topo->func_units[0], topo->func_units[1]);
+	} else {
+		shell_print(sh, "  Function unit: %d", topo->func_units[0]);
+	}
+	if (num_midi_outputs == 2) {
+		shell_print(sh, "  MIDI outputs: [%d, %d]", topo->midi_outputs[0], topo->midi_outputs[1]);
+	} else {
+		shell_print(sh, "  MIDI output: %d", topo->midi_outputs[0]);
+	}
+	shell_print(sh, "Run 'config reload' to apply changes");
+	
+	return 0;
+}
+
+/*
+ * Function commands
+ */
+
+static int cmd_func_show(const struct shell *sh, size_t argc, char **argv)
+{
+	struct config_data cfg;
+	int err = config_storage_load(&cfg);
+	if (err) {
+		shell_error(sh, "Failed to load configuration");
+		return err;
+	}
+	
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
+	
+	int func_idx = 0;
+	if (argc >= 2) {
+		func_idx = atoi(argv[1]);
+	}
+	
+	if (func_idx < 0 || func_idx >= MAX_FUNCTION_UNITS) {
+		shell_error(sh, "Invalid function index: %d (must be 0-%d)", func_idx, MAX_FUNCTION_UNITS-1);
+		return -EINVAL;
+	}
+	
+	struct function_unit *func = &cfg.patches[patch_idx].functions[func_idx];
+	
+	shell_print(sh, "Function Unit %d:", func_idx);
+	shell_print(sh, "  Type: %d %s", func->function_type, 
+		func->function_type == FUNC_LINEAR ? "(LINEAR)" :
+		func->function_type == FUNC_PASSTHROUGH ? "(PASSTHROUGH)" :
+		func->function_type == FUNC_DEADZONE ? "(DEADZONE)" :
+		func->function_type == FUNC_SCALE ? "(SCALE)" : "(OTHER)");
+	shell_print(sh, "  Enabled: %d", func->enabled);
+	shell_print(sh, "  Parameters: [%d, %d, %d, %d, %d, %d]",
+		func->params[0], func->params[1], func->params[2],
+		func->params[3], func->params[4], func->params[5]);
+	
+	if (func->function_type == FUNC_LINEAR) {
+		shell_print(sh, "  Linear mapping: [%d,%d] → [%d,%d]",
+			func->params[0], func->params[1], func->params[2], func->params[3]);
+	}
+	
+	return 0;
+}
+
+static int cmd_func_linear(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc < 6) {
+		shell_error(sh, "Usage: func linear <unit> <in_min> <in_max> <out_min> <out_max>");
+		return -EINVAL;
+	}
+	
+	struct config_data cfg;
+	int err = config_storage_load(&cfg);
+	if (err) {
+		shell_error(sh, "Failed to load configuration");
+		return err;
+	}
+	
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
+	
+	int func_idx = atoi(argv[1]);
+	int16_t in_min = atoi(argv[2]);
+	int16_t in_max = atoi(argv[3]);
+	int16_t out_min = atoi(argv[4]);
+	int16_t out_max = atoi(argv[5]);
+	
+	if (func_idx < 0 || func_idx >= MAX_FUNCTION_UNITS) {
+		shell_error(sh, "Invalid function index: %d", func_idx);
+		return -EINVAL;
+	}
+	
+	struct function_unit *func = &cfg.patches[patch_idx].functions[func_idx];
+	func_init_linear(func, in_min, in_max, out_min, out_max);
+	
+	err = config_storage_save(&cfg);
+	if (err) {
+		shell_error(sh, "Failed to save configuration");
+		return err;
+	}
+	
+	shell_print(sh, "Function %d configured as LINEAR: [%d,%d] → [%d,%d]",
+		func_idx, in_min, in_max, out_min, out_max);
+	shell_print(sh, "Run 'config reload' to apply changes");
+	
+	return 0;
+}
+
+/*
+ * Configuration reload command
+ */
+
+static int cmd_config_reload(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	
+	if (ui_config_reload_callback) {
+		ui_config_reload_callback();
+		shell_print(sh, "Configuration reloaded from storage");
+	} else {
+		shell_warn(sh, "Config reload callback not set");
+	}
+	
+	return 0;
+}
+
 static int cmd_config_import(const struct shell *sh, size_t argc, char **argv)
 {
 	ARG_UNUSED(argc);
@@ -1004,11 +1284,6 @@ static int cmd_config_import(const struct shell *sh, size_t argc, char **argv)
 	shell_print(sh, "Or manually set values using:");
 	shell_print(sh, "  config midi_ch <1-16>");
 	shell_print(sh, "  config select <0-15>");
-	shell_print(sh, "  config cc <x|y|z> <0-127>");
-	shell_print(sh, "  config accel_min <0-5> <0-127>");
-	shell_print(sh, "  config accel_max <0-5> <0-127>");
-	shell_print(sh, "  config accel_invert <0-5> <0|1>");
-	shell_print(sh, "  config velocity_curve <0-127>");
 	shell_print(sh, "  config save");
 	
 	return 0;
@@ -1022,18 +1297,12 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_config,
 	SHELL_CMD(show, NULL, "Show current configuration", cmd_config_show),
 	SHELL_CMD(save, NULL, "Save configuration to flash", cmd_config_save),
 	SHELL_CMD(restore, NULL, "Restore factory defaults", cmd_config_restore),
+	SHELL_CMD(reload, NULL, "Reload configuration from storage", cmd_config_reload),
 	SHELL_CMD_ARG(patch, NULL, "Show specific patch <0-15>", cmd_config_patch, 2, 0),
 	SHELL_CMD_ARG(select, NULL, "Select active patch <0-15>", cmd_config_select_patch, 2, 0),
 	SHELL_CMD(list, NULL, "List patches", cmd_config_list_patches),
 	SHELL_CMD_ARG(midi_ch, NULL, "Set MIDI channel <1-16>", cmd_config_midi_ch, 2, 0),
-	SHELL_CMD_ARG(cc, NULL, "Set CC mapping <x|y|z> <0-127>", cmd_config_cc, 3, 0),
-	SHELL_CMD_ARG(accel_min, NULL, "Set axis min CC <0-5> <0-127>", cmd_config_accel_min, 3, 0),
-	SHELL_CMD_ARG(accel_max, NULL, "Set axis max CC <0-5> <0-127>", cmd_config_accel_max, 3, 0),
-	SHELL_CMD_ARG(accel_invert, NULL, "Invert axis <0-5> <0|1>", cmd_config_accel_invert, 3, 0),
 	SHELL_CMD_ARG(accel_deadzone, NULL, "Set CC change threshold <0-127>", cmd_config_accel_deadzone, 2, 0),
-	SHELL_CMD_ARG(accel_scale, NULL, "Set axis G-force range <0-2> <100-4000>mg", cmd_config_accel_scale, 3, 0),
-	SHELL_CMD_ARG(accel_offset, NULL, "Set axis center point <0-2> <-2000-2000>mg", cmd_config_accel_offset, 3, 0),
-	SHELL_CMD_ARG(velocity_curve, NULL, "Set velocity curve <0-127>", cmd_config_velocity_curve, 2, 0),
 	SHELL_CMD_ARG(scan_interval, NULL, "Set BLE scan interval <10-1000> ms", cmd_config_scan_interval, 2, 0),
 	SHELL_CMD_ARG(avg_enable, NULL, "Enable running average <0|1>", cmd_config_avg_enable, 2, 0),
 	SHELL_CMD_ARG(avg_depth, NULL, "Set average depth <3-10> samples", cmd_config_avg_depth, 2, 0),
@@ -1051,8 +1320,23 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_midi,
 	SHELL_SUBCMD_SET_END
 );
 
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_topo,
+	SHELL_CMD(show, NULL, "Show topology configuration", cmd_topo_show),
+	/* SHELL_CMD_ARG(enable, NULL, "Enable virtual ports <0|1>", cmd_topo_enable, 2, 0), */ /* Legacy - topology always active */
+	SHELL_CMD_ARG(config, NULL, "Configure topology <inst> <type> <accel> [func] [cc]", cmd_topo_config, 4, 2),
+	SHELL_SUBCMD_SET_END
+);
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_func,
+	SHELL_CMD_ARG(show, NULL, "Show function unit [idx]", cmd_func_show, 1, 1),
+	SHELL_CMD_ARG(linear, NULL, "Configure LINEAR <idx> <in_min> <in_max> <out_min> <out_max>", cmd_func_linear, 6, 0),
+	SHELL_SUBCMD_SET_END
+);
+
 SHELL_CMD_REGISTER(config, &sub_config, "Configuration commands", NULL);
 SHELL_CMD_REGISTER(midi, &sub_midi, "MIDI commands", NULL);
+SHELL_CMD_REGISTER(topo, &sub_topo, "Topology commands", NULL);
+SHELL_CMD_REGISTER(func, &sub_func, "Function unit commands", NULL);
 SHELL_CMD_REGISTER(status, NULL, "Show system status", cmd_status);
 
 /*

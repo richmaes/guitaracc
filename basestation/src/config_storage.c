@@ -250,42 +250,38 @@ void config_storage_get_hardcoded_defaults(struct config_data *data)
 	data->global.max_guitars = 4;
 	data->global.scan_interval_ms = 100;
 	data->global.led_brightness = 128;  /* 50% brightness */
-	for (int i = 0; i < 3; i++) {
-		data->global.accel_scale[i] = 206;  /* ±0.2g full scale (±206mg maps to MIDI 0-127) */
-		data->global.accel_offset[i] = 289;   /* Center point (289mg) */
-	}
 	data->global.running_average_enable = 1;  /* Enabled */
 	data->global.running_average_depth = 5;   /* 5 samples */
 	
 	/* Initialize all patches with defaults */
-	for (int p = 0; p < 16; p++) {
-		data->patches[p].velocity_curve = 0; /* Linear */
-
-		data->patches[p].cc_mapping[0] = 16;  /* CC16: General Purpose 1 (X-axis) */
-		data->patches[p].cc_mapping[1] = 17;  /* CC17: General Purpose 2 (Y-axis) */
-		data->patches[p].cc_mapping[2] = 18;  /* CC18: General Purpose 3 (Z-axis) */
-		data->patches[p].cc_mapping[3] = 19;  /* CC19: General Purpose 4 (Roll) */
-		data->patches[p].cc_mapping[4] = 20;  /* CC20: General Purpose 5 (Pitch) */
-		data->patches[p].cc_mapping[5] = 21;  /* CC21: General Purpose 6 (Yaw) */
-
-		data->patches[p].accel_min[0] = 0;  /* CC16: Min value (X-axis) */
-		data->patches[p].accel_min[1] = 0;  /* CC17: Min value (Y-axis) */
-		data->patches[p].accel_min[2] = 0;  /* CC18: Min value (Z-axis) */
-		data->patches[p].accel_min[3] = 0;  /* CC19: Min value (Roll) */
-		data->patches[p].accel_min[4] = 0;  /* CC20: Min value (Pitch) */
-		data->patches[p].accel_min[5] = 0;  /* CC21: Min value (Yaw) */
-
-		data->patches[p].accel_max[0] = 127;  /* CC16: Max value (X-axis) */
-		data->patches[p].accel_max[1] = 127;  /* CC17: Max value (Y-axis) */
-		data->patches[p].accel_max[2] = 127;  /* CC18: Max value (Z-axis) */
-		data->patches[p].accel_max[3] = 127;  /* CC19: Max value (Roll) */
-		data->patches[p].accel_max[4] = 127;  /* CC20: Max value (Pitch) */
-		data->patches[p].accel_max[5] = 127;  /* CC21: Max value (Yaw) */
-
+	for (int p = 0; p < NUM_PATCHES; p++) {
 		data->patches[p].led_mode = 0;          /* Normal mode */
-		data->patches[p].accel_deadzone = 1;  /* MIDI CC change threshold (1 = send on any change) */
-		snprintf(data->patches[p].patch_name, sizeof(data->patches[p].patch_name), 
-		         "Patch %d", p);
+		data->patches[p].midi_deadzone = 1;  /* MIDI CC change threshold (1 = send on any change) */
+		snprintf(data->patches[p].patch_name, sizeof(data->patches[p].patch_name),
+			 "Patch %d", p);
+		
+		/* Initialize virtual ports topology configuration */
+		data->patches[p].default_mixer_type = 2; /* MIXER_AVERAGE */
+		
+		/* Configure all 6 axes with T1 topology (simple linear) */
+		for (int i = 0; i < MAX_TOPOLOGY_INSTANCES; i++) {
+			data->patches[p].topologies[i].topology_type = TOPO_T1;
+			data->patches[p].topologies[i].accel_inputs[0] = i;  /* X, Y, Z, Roll, Pitch, Yaw */
+			data->patches[p].topologies[i].func_units[0] = i;    /* Each gets own function unit */
+			data->patches[p].topologies[i].midi_outputs[0] = 16 + i; /* CC 16-21 */
+			data->patches[p].topologies[i].enabled = 1;
+		}
+		
+		/* Initialize all function units to linear mapping (±2g) - inline to avoid function call during early init */
+		for (int i = 0; i < MAX_FUNCTION_UNITS; i++) {
+			data->patches[p].functions[i].function_type = FUNC_LINEAR;
+			data->patches[p].functions[i].enabled = 1;
+			data->patches[p].functions[i].param_count = 4;
+			data->patches[p].functions[i].params[0] = -2000;  /* input_min */
+			data->patches[p].functions[i].params[1] = 2000;   /* input_max */
+			data->patches[p].functions[i].params[2] = 0;      /* output_min */
+			data->patches[p].functions[i].params[3] = 127;    /* output_max */
+		}
 	}
 }
 

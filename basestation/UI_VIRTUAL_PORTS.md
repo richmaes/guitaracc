@@ -12,7 +12,7 @@
 This GUI provides visual configuration of the signal routing system that maps 6 motion sensors (3 accelerometer axes + 3 gyroscope axes) through configurable topologies and function units to MIDI CC outputs.
 
 **Key Concepts:**
-- **16 Patches**: Switchable configurations (like instrument presets)
+- **4 Patches**: Switchable configurations (like instrument presets)
 - **6 Sensor Sources per Patch**: X, Y, Z accelerometer + Roll, Pitch, Yaw gyroscope
 - **4 Topology Types**: Fixed signal routing patterns (T1-T4)
 - **8 Function Units**: Signal processing blocks per patch
@@ -27,7 +27,7 @@ This GUI provides visual configuration of the signal routing system that maps 6 
 │ GuitarAcc Virtual Ports Configuration                       │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  Patch: [Dropdown: 1-16]  [Load] [Save] [Export] [Import]  │
+│  Patch: [Dropdown: 1-4]  [Load] [Save] [Export] [Import]  │
 │                                                              │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │  Sensor Source Selection                              │  │
@@ -80,7 +80,7 @@ This GUI provides visual configuration of the signal routing system that maps 6 
 ### 1. Patch Selector
 **Location:** Top of window  
 **Controls:**
-- **Dropdown:** Select patch 1-16
+- **Dropdown:** Select patch 1-4
 - **Load Button:** Load patch from device
 - **Save Button:** Save patch to device
 - **Export Button:** Export patch to JSON file
@@ -602,7 +602,7 @@ class VirtualPortsConfig: ObservableObject {
 4. **Presets Library:** Community-shared configurations
 5. **Performance Mode:** Simplified view for live use
 6. **Multi-Device:** Manage multiple guitar units
-7. **Patch Bank Management:** Organize 16 patches into banks
+7. **Patch Bank Management:** Organize 4 patches into banks
 8. **Undo/Redo:** Configuration change history
 
 ---

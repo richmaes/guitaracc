@@ -6,6 +6,8 @@
 #include "ui_interface.h"
 #include "config_storage.h"
 #include "topology_config.h"
+#include "topology_processor.h"
+#include "virtual_ports.h"
 #include "function_units.h"
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
@@ -866,7 +868,43 @@ static void print_patch_json(const struct shell *sh, const struct patch_config *
 	shell_print(sh, "        \"patch_num\": %d,", patch_num);
 	shell_print(sh, "        \"patch_name\": \"%s\",", patch->patch_name);
 	shell_print(sh, "        \"led_mode\": %d,", patch->led_mode);
-	shell_print(sh, "        \"midi_deadzone\": %d", patch->midi_deadzone);
+	shell_print(sh, "        \"midi_deadzone\": %d,", patch->midi_deadzone);
+	shell_print(sh, "        \"default_mixer_type\": %d,", patch->default_mixer_type);
+	
+	/* Export topology instances */
+	shell_print(sh, "        \"topologies\": [");
+	for (int i = 0; i < MAX_TOPOLOGY_INSTANCES; i++) {
+		const struct topology_instance *topo = &patch->topologies[i];
+		shell_print(sh, "          {");
+		shell_print(sh, "            \"instance\": %d,", i);
+		shell_print(sh, "            \"enabled\": %s,", json_bool(topo->enabled));
+		shell_print(sh, "            \"topology_type\": %d,", topo->topology_type);
+		shell_print(sh, "            \"accel_inputs\": [%d, %d],", 
+			topo->accel_inputs[0], topo->accel_inputs[1]);
+		shell_print(sh, "            \"func_units\": [%d, %d],", 
+			topo->func_units[0], topo->func_units[1]);
+		shell_print(sh, "            \"midi_outputs\": [%d, %d]", 
+			topo->midi_outputs[0], topo->midi_outputs[1]);
+		shell_print(sh, "          }%s", (i == MAX_TOPOLOGY_INSTANCES - 1) ? "" : ",");
+	}
+	shell_print(sh, "        ],");
+	
+	/* Export function units */
+	shell_print(sh, "        \"functions\": [");
+	for (int i = 0; i < MAX_FUNCTION_UNITS; i++) {
+		const struct function_unit *func = &patch->functions[i];
+		shell_print(sh, "          {");
+		shell_print(sh, "            \"unit\": %d,", i);
+		shell_print(sh, "            \"enabled\": %s,", json_bool(func->enabled));
+		shell_print(sh, "            \"function_type\": %d,", func->function_type);
+		shell_print(sh, "            \"param_count\": %d,", func->param_count);
+		shell_print(sh, "            \"params\": [%d, %d, %d, %d, %d, %d]",
+			func->params[0], func->params[1], func->params[2],
+			func->params[3], func->params[4], func->params[5]);
+		shell_print(sh, "          }%s", (i == MAX_FUNCTION_UNITS - 1) ? "" : ",");
+	}
+	shell_print(sh, "        ]");
+	
 	shell_print(sh, "      }%s", last ? "" : ",");
 }
 
@@ -893,13 +931,13 @@ static int cmd_config_export(const struct shell *sh, size_t argc, char **argv)
 	} else if (argc == 3 && strcmp(argv[1], "patch") == 0) {
 		/* Export single patch */
 		single_patch = atoi(argv[2]);
-		if (single_patch < 0 || single_patch > 15) {
-			shell_error(sh, "Invalid patch number (0-15)");
+		if (single_patch < 0 || single_patch >= NUM_PATCHES) {
+			shell_error(sh, "Invalid patch number (0-%d)", NUM_PATCHES - 1);
 			return -1;
 		}
 		export_patches = true;
 	} else {
-		shell_error(sh, "Usage: config export [global | patch <0-15>]");
+		shell_error(sh, "Usage: config export [global | patch <0-%d>]", NUM_PATCHES - 1);
 		return -1;
 	}
 	
@@ -930,8 +968,8 @@ static int cmd_config_export(const struct shell *sh, size_t argc, char **argv)
 			print_patch_json(sh, &cfg.patches[single_patch], single_patch, true);
 		} else {
 			/* Export all patches */
-			for (int i = 0; i < 16; i++) {
-				print_patch_json(sh, &cfg.patches[i], i, (i == 15));
+			for (int i = 0; i < NUM_PATCHES; i++) {
+				print_patch_json(sh, &cfg.patches[i], i, (i == NUM_PATCHES - 1));
 			}
 		}
 		
@@ -1009,6 +1047,56 @@ static int cmd_topo_enable(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 */
+
+static int cmd_topo_mixer(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc < 2) {
+		shell_error(sh, "Usage: topo mixer <type>");
+		shell_print(sh, "  type: Mixer algorithm for combining inputs");
+		shell_print(sh, "    0 = PASSTHROUGH (single input, no mixing)");
+		shell_print(sh, "    1 = SUM (sum all inputs, clamp to 0-127)");
+		shell_print(sh, "    2 = AVERAGE (average all inputs)");
+		shell_print(sh, "    3 = MAX (maximum of all inputs)");
+		shell_print(sh, "    4 = MIN (minimum of all inputs)");
+		shell_print(sh, "Example:");
+		shell_print(sh, "  topo mixer 1    # Use SUM mixer");
+		return -EINVAL;
+	}
+	
+	struct config_data cfg;
+	int err = config_storage_load(&cfg);
+	if (err) {
+		shell_error(sh, "Failed to load configuration");
+		return err;
+	}
+	
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
+	
+	int mixer_type = atoi(argv[1]);
+	if (mixer_type < 0 || mixer_type > 4) {
+		shell_error(sh, "Invalid mixer type: %d (must be 0-4)", mixer_type);
+		return -EINVAL;
+	}
+	
+	cfg.patches[patch_idx].default_mixer_type = mixer_type;
+	
+	err = config_storage_save(&cfg);
+	if (err) {
+		shell_error(sh, "Failed to save configuration");
+		return err;
+	}
+	
+	const char *mixer_names[] = {
+		"PASSTHROUGH", "SUM", "AVERAGE", "MAX", "MIN"
+	};
+	
+	shell_print(sh, "Patch %d mixer set to: %s (%d)", 
+		patch_idx, mixer_names[mixer_type], mixer_type);
+	shell_print(sh, "Run 'config reload' to apply changes");
+	
+	return 0;
+}
 
 static int cmd_topo_config(const struct shell *sh, size_t argc, char **argv)
 {
@@ -1256,6 +1344,81 @@ static int cmd_func_linear(const struct shell *sh, size_t argc, char **argv)
 }
 
 /*
+ * Virtual Port commands
+ */
+
+static int cmd_vport_show(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc < 2) {
+		shell_error(sh, "Usage: vport show <instance> [vport_offset]");
+		shell_print(sh, "  instance: Topology instance (0-5)");
+		shell_print(sh, "  vport_offset: Virtual port offset within instance (0-2, optional)");
+		shell_print(sh, "Examples:");
+		shell_print(sh, "  vport show 0       # Show all VPs for instance 0");
+		shell_print(sh, "  vport show 0 1     # Show VP[1] for instance 0");
+		return -EINVAL;
+	}
+	
+	int instance = atoi(argv[1]);
+	if (instance < 0 || instance >= MAX_TOPOLOGY_INSTANCES) {
+		shell_error(sh, "Invalid instance: %d (must be 0-%d)", instance, MAX_TOPOLOGY_INSTANCES-1);
+		return -EINVAL;
+	}
+	
+	/* Get topology processor */
+	struct topology_processor *proc = ui_get_topology_processor();
+	if (!proc) {
+		shell_error(sh, "Topology processor not available");
+		return -EIO;
+	}
+	
+	/* Virtual ports are allocated: instance_idx * 3 + offset */
+	uint8_t vp_base = instance * 3;
+	
+	if (argc >= 3) {
+		/* Show specific virtual port */
+		int offset = atoi(argv[2]);
+		if (offset < 0 || offset > 2) {
+			shell_error(sh, "Invalid vport offset: %d (must be 0-2)", offset);
+			return -EINVAL;
+		}
+		
+		uint8_t vp_num = vp_base + offset;
+		if (vp_num >= MAX_VIRTUAL_PORTS) {
+			shell_error(sh, "Virtual port %d out of range", vp_num);
+			return -EINVAL;
+		}
+		
+		uint8_t value = vport_read(&proc->vport_system, vp_num);
+		int16_t raw_value = vport_read_raw(&proc->vport_system, vp_num);
+		uint8_t input_count = vport_get_input_count(&proc->vport_system, vp_num);
+		
+		shell_print(sh, "Instance %d, VP[%d] (absolute VP %d):", instance, offset, vp_num);
+		shell_print(sh, "  Value (MIDI): %d", value);
+		shell_print(sh, "  Value (raw): %d", raw_value);
+		shell_print(sh, "  Input count: %d", input_count);
+	} else {
+		/* Show all virtual ports for this instance */
+		shell_print(sh, "Virtual Ports for Instance %d:", instance);
+		for (int offset = 0; offset < 3; offset++) {
+			uint8_t vp_num = vp_base + offset;
+			if (vp_num >= MAX_VIRTUAL_PORTS) {
+				break;
+			}
+			
+			uint8_t value = vport_read(&proc->vport_system, vp_num);
+			int16_t raw_value = vport_read_raw(&proc->vport_system, vp_num);
+			uint8_t input_count = vport_get_input_count(&proc->vport_system, vp_num);
+			
+			shell_print(sh, "  VP[%d] (abs %d): MIDI=%3d raw=%5d inputs=%d", 
+				offset, vp_num, value, raw_value, input_count);
+		}
+	}
+	
+	return 0;
+}
+
+/*
  * Configuration reload command
  */
 
@@ -1306,7 +1469,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_config,
 	SHELL_CMD_ARG(scan_interval, NULL, "Set BLE scan interval <10-1000> ms", cmd_config_scan_interval, 2, 0),
 	SHELL_CMD_ARG(avg_enable, NULL, "Enable running average <0|1>", cmd_config_avg_enable, 2, 0),
 	SHELL_CMD_ARG(avg_depth, NULL, "Set average depth <3-10> samples", cmd_config_avg_depth, 2, 0),
-	SHELL_CMD_ARG(export, NULL, "Export config [global | patch <0-15>]", cmd_config_export, 1, 2),
+	SHELL_CMD_ARG(export, NULL, "Export config [global | patch <0-3>]", cmd_config_export, 1, 2),
 	SHELL_CMD(import, NULL, "Import config from JSON", cmd_config_import),
 	SHELL_CMD(erase_all, NULL, "Erase all config (testing only)", cmd_config_erase_all),
 	SHELL_SUBCMD_SET_END
@@ -1324,6 +1487,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_topo,
 	SHELL_CMD(show, NULL, "Show topology configuration", cmd_topo_show),
 	/* SHELL_CMD_ARG(enable, NULL, "Enable virtual ports <0|1>", cmd_topo_enable, 2, 0), */ /* Legacy - topology always active */
 	SHELL_CMD_ARG(config, NULL, "Configure topology <inst> <type> <accel> [func] [cc]", cmd_topo_config, 4, 2),
+	SHELL_CMD_ARG(mixer, NULL, "Set mixer type <0-4> (0=PASS,1=SUM,2=AVG,3=MAX,4=MIN)", cmd_topo_mixer, 2, 0),
 	SHELL_SUBCMD_SET_END
 );
 
@@ -1333,10 +1497,16 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_func,
 	SHELL_SUBCMD_SET_END
 );
 
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_vport,
+	SHELL_CMD_ARG(show, NULL, "Show virtual port value <instance> [vport_offset]", cmd_vport_show, 2, 1),
+	SHELL_SUBCMD_SET_END
+);
+
 SHELL_CMD_REGISTER(config, &sub_config, "Configuration commands", NULL);
 SHELL_CMD_REGISTER(midi, &sub_midi, "MIDI commands", NULL);
 SHELL_CMD_REGISTER(topo, &sub_topo, "Topology commands", NULL);
 SHELL_CMD_REGISTER(func, &sub_func, "Function unit commands", NULL);
+SHELL_CMD_REGISTER(vport, &sub_vport, "Virtual port debug commands", NULL);
 SHELL_CMD_REGISTER(status, NULL, "Show system status", cmd_status);
 
 /*

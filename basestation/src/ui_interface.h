@@ -9,6 +9,9 @@
 #include <zephyr/kernel.h>
 #include <stdbool.h>
 
+/* Forward declarations */
+struct topology_processor;
+
 /**
  * @brief Initialize the UI interface (Zephyr Shell)
  * 
@@ -87,5 +90,12 @@ int send_midi_realtime(uint8_t rt_byte);
  * Set this callback to be notified when configuration changes via shell
  */
 extern void (*ui_config_reload_callback)(void);
+
+/**
+ * @brief Get topology processor pointer for debugging
+ * 
+ * @return Pointer to the topology processor (read-only access)
+ */
+struct topology_processor *ui_get_topology_processor(void);
 
 #endif /* UI_INTERFACE_H */

@@ -34,8 +34,8 @@ Commands are organized hierarchically using the Zephyr Shell:
 - `config show` - Display all current configuration values
 - `config save` - Save current configuration to flash
 - `config restore` - Restore factory default configuration
-- `config patch <0-15>` - Show specific patch configuration
-- `config select <0-15>` - Select active patch
+- `config patch <0-3>` - Show specific patch configuration
+- `config select <0-3>` - Select active patch
 - `config list` - List all patches
 - `config midi_ch <1-16>` - Set MIDI output channel
 - `config cc <x|y|z> <0-127>` - Set CC number for each accelerometer axis
@@ -51,7 +51,7 @@ Commands are organized hierarchically using the Zephyr Shell:
 #### Configuration Import/Export Commands (`config` submenu)
 - `config export` - Export entire configuration (global + all patches) in JSON format
 - `config export global` - Export only global configuration
-- `config export patch <0-15>` - Export single patch configuration
+- `config export patch <0-3>` - Export single patch configuration
 - `config import` - Import configuration from JSON input (interactive mode)
   - Supports full, global-only, or single-patch updates
   - Validates input before applying changes
@@ -66,6 +66,61 @@ Commands are organized hierarchically using the Zephyr Shell:
 - `midi rx_reset` - Reset MIDI receive statistics counters
 - `midi program [0-127]` - Get or set current MIDI program number
 - `midi send_rt <0xF8-0xFF>` - Send real-time MIDI message (Clock, Start, Stop, etc.)
+
+#### Topology Commands (`topo` submenu)
+Virtual Ports topology system provides flexible signal routing from accelerometer/gyro sources through function units to MIDI CC outputs.
+
+- `topo show` - Display current topology configuration
+  - Shows all 6 topology instances for current patch
+  - Displays topology type (T1, T2, T3, T4) and parameters
+  - Shows default mixer type and function configurations
+- `topo config <instance> <type> <accel> [func] [midi_cc]` - Configure topology instance
+  - `instance`: Topology instance (0-5)
+  - `type`: Topology type
+    - `1` = T1 (single input → function → single output)
+    - `2` = T2 (dual inputs merged → function → single output)
+    - `3` = T3 (single input → function → dual outputs)
+    - `4` = T4 (dual inputs → dual functions → dual outputs)
+  - `accel`: Accelerometer/gyro axis (0-5 for X,Y,Z,Roll,Pitch,Yaw)
+    - For T2/T4: Use comma-separated format like `0,1` for X+Y axes
+  - `func`: Function unit index (0-7, optional, defaults to instance number)
+  - `midi_cc`: MIDI CC number (0-127, optional, defaults to 16+instance)
+  - Examples:
+    - `topo config 0 1 0 0 16` - T1: X-axis → func 0 → CC 16
+    - `topo config 1 2 0,1 0 17` - T2: X+Y merged → func 0 → CC 17
+    - `topo config 2 3 2 1 18,19` - T3: Z-axis → func 1 → CC 18+19
+- `topo mixer <0-4>` - Set mixer type for current patch (how multiple inputs combine in T2/T4)
+  - `0` = PASSTHROUGH (single input, no mixing)
+  - `1` = SUM (sum all inputs, clamp to 0-127)
+  - `2` = AVERAGE (average all inputs) - **default**
+  - `3` = MAX (maximum of all inputs)
+  - `4` = MIN (minimum of all inputs)
+  - Example: `topo mixer 1` - Use SUM mixer for merged inputs
+
+#### Function Unit Commands (`func` submenu)
+Function units process accelerometer signals before sending to MIDI.
+
+- `func show [idx]` - Show function unit configuration
+  - `idx`: Function unit index (0-7, optional, defaults to 0)
+  - Displays function type, enabled status, and parameters
+  - For LINEAR type, shows input/output range mapping
+- `func linear <idx> <in_min> <in_max> <out_min> <out_max>` - Configure LINEAR function
+  - `idx`: Function unit index (0-7)
+  - `in_min`, `in_max`: Input range (accelerometer values, typically ±2000 for ±2g)
+  - `out_min`, `out_max`: Output range (MIDI values, typically 0-127)
+  - Example: `func linear 0 -2000 2000 0 127` - Map ±2g to full MIDI range
+
+#### Virtual Port Debug Commands (`vport` submenu)
+Real-time debugging of virtual port values during signal processing.
+
+- `vport show <instance> [vport_offset]` - Show virtual port values
+  - `instance`: Topology instance (0-5)
+  - `vport_offset`: Virtual port offset within instance (0-2, optional)
+  - Displays MIDI value (clamped), raw value (unclamped), and input count
+  - Example: `vport show 0` - Show all virtual ports for instance 0
+  - Example: `vport show 0 1` - Show VP[1] for instance 0
+
+**Note:** After changing topology or function configurations, run `config reload` to apply changes.
 
 ### Shell Features
 - **Tab Completion**: Press Tab to autocomplete commands and show available options
@@ -412,7 +467,7 @@ The export format uses JSON with a hierarchical structure:
 ```bash
 config export
 ```
-Outputs complete configuration including global settings and all 16 patches.
+Outputs complete configuration including global settings and all 4 patches.
 
 #### Export Global Settings Only
 ```bash

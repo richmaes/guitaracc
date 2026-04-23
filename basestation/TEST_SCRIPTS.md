@@ -35,9 +35,9 @@ Use the `-i` or `--interactive` flag to include interactive tests.
 ### 1. Patch Count & Persistence Test
 **Script:** `verify_patch_count.py`
 
-Tests the 16-patch configuration system:
-- Validates patch selection boundaries (0-15 valid, 16+ rejected)
-- Writes unique random data to all 16 patches
+Tests the 4-patch configuration system:
+- Validates patch selection boundaries (0-3 valid, 4+ rejected)
+- Writes unique random data to all 4 patches
 - Verifies data persistence across saves/loads
 - Tests random patch switching
 - Validates CC mappings, velocity curves, min/max/invert for all axes
@@ -58,7 +58,7 @@ Tests the 16-patch configuration system:
 **Script:** `verify_export_import.py`
 
 Tests the JSON-based config export/import functionality:
-- Validates full configuration export (global + all 16 patches)
+- Validates full configuration export (global + all 4 patches)
 - Tests global-only export
 - Tests single-patch export
 - Verifies JSON structure and field presence

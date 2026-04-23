@@ -332,7 +332,7 @@ The virtual port configuration must be stored persistently:
 
 ### Storage Location
 - Add to existing `config_data` structure in [config_storage.h](src/config_storage.h)
-- Per-patch configuration (each of 16 patches can have different topology/function configurations)
+- Per-patch configuration (each of 4 patches can have different topology/function configurations)
 
 ### Storage Size Estimate
 
@@ -381,16 +381,16 @@ Total per patch:                                184 bytes
 
 Virtual port runtime state (16 ports × 4 bytes = 64 bytes) is **not persisted** - it's computed fresh on each sample.
 
-**For 16 patches**: 184 bytes × 16 = **~2.9 KB**
+**For 4 patches**: 184 bytes × 4 = **~736 bytes**
 
-This is **significantly smaller** than the original ~10KB estimate for arbitrary connection tables.
+This is **significantly smaller** than the original ~2.5KB estimate for arbitrary connection tables.
 
 #### Comparison to Arbitrary Connection Model
 
-| Storage Model | Per Patch | 16 Patches | Reduction |
+| Storage Model | Per Patch | 4 Patches | Reduction |
 |---------------|-----------|------------|-----------|
-| Arbitrary Connections | ~640 bytes | ~10 KB | - |
-| Fixed Topologies | 184 bytes | ~2.9 KB | **71% smaller** |
+| Arbitrary Connections | ~640 bytes | ~2.5 KB | - |
+| Fixed Topologies | 184 bytes | ~736 bytes | **71% smaller** |
 
 #### Benefits of Fixed Topology Storage
 

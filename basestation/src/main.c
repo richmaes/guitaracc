@@ -137,6 +137,12 @@ static void reload_config(void)
 	LOG_INF("Virtual ports topology reloaded for patch %d", patch_idx);
 }
 
+/* Get topology processor for UI access */
+struct topology_processor *ui_get_topology_processor(void)
+{
+	return &topo_proc;
+}
+
 /* UART ISR for interrupt-driven MIDI transmission */
 static void uart_isr(const struct device *dev, void *user_data)
 {

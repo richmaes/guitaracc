@@ -31,6 +31,7 @@ enum function_type {
 	FUNC_DISABLED = 0,      /* Function unit not active */
 	FUNC_PASSTHROUGH,       /* Direct copy (output = input) */
 	FUNC_LINEAR,            /* Linear scaling with configurable range */
+	FUNC_SCALE_OFFSET,      /* Global scale/offset calibration (reads from global config) */
 	FUNC_DEADZONE,          /* Zero output below threshold */
 	FUNC_INVERT,            /* Invert signal (127 - input) */
 	FUNC_SCALE,             /* Multiply and clamp */
@@ -71,6 +72,13 @@ struct function_unit {
  *              params[2]=output_min, params[3]=output_max
  *   Maps input range [input_min, input_max] to output range [output_min, output_max]
  *   Example: params={-2000, 2000, 0, 127} maps ±2g to full MIDI range
+ *
+ * FUNC_SCALE_OFFSET: params[0]=sensor_index (0-5)
+ *   Applies global scale and offset calibration from config.global.accel_scale[] 
+ *   and config.global.accel_offset[]. This is a shared calibration resource.
+ *   Formula: output = ((input - offset) * 127) / scale
+ *   Example: params={0} applies calibration for sensor 0 (Accel X)
+ *   Note: Requires access to global configuration structure
  *
  * FUNC_DEADZONE: params[0]=threshold
  *   output = (abs(input) < threshold) ? 0 : input
@@ -113,6 +121,16 @@ void func_init(struct function_unit *func, enum function_type type);
 void func_init_linear(struct function_unit *func, 
                       int16_t input_min, int16_t input_max,
                       int16_t output_min, int16_t output_max);
+
+/**
+ * @brief Initialize a scale/offset function unit
+ * 
+ * This function type applies global calibration from config.global.
+ * 
+ * @param func Pointer to function unit
+ * @param sensor_index Sensor index (0-5) to calibrate
+ */
+void func_init_scale_offset(struct function_unit *func, uint8_t sensor_index);
 
 /**
  * @brief Initialize a deadzone function unit

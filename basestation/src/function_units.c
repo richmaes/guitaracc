@@ -114,6 +114,12 @@ void func_init(struct function_unit *func, enum function_type type)
 		func->param_count = 2;
 		break;
 		
+	case FUNC_SCALE_OFFSET:
+		/* Default: sensor 0 (Accel X) */
+		func->params[0] = 0;    /* sensor_index */
+		func->param_count = 1;
+		break;
+		
 	default:
 		func->param_count = 0;
 		break;
@@ -147,6 +153,17 @@ void func_init_deadzone(struct function_unit *func, int16_t threshold)
 	func->param_count = 1;
 }
 
+void func_init_scale_offset(struct function_unit *func, uint8_t sensor_index)
+{
+	if (!func) {
+		return;
+	}
+	
+	func_init(func, FUNC_SCALE_OFFSET);
+	func->params[0] = (int16_t)sensor_index;
+	func->param_count = 1;
+}
+
 int16_t func_process(const struct function_unit *func, int16_t input)
 {
 	if (!func || !func->enabled) {
@@ -163,6 +180,19 @@ int16_t func_process(const struct function_unit *func, int16_t input)
 			                  func->params[0], func->params[1],  /* input range */
 			                  func->params[2], func->params[3]); /* output range */
 		}
+		return input;
+		
+	case FUNC_SCALE_OFFSET:
+		/* NOTE: This function type requires access to global configuration
+		 * (config.global.accel_scale[] and config.global.accel_offset[]).
+		 * It should be processed at the topology processor level where
+		 * global config is available, not in this generic func_process().
+		 * 
+		 * Recommended: Implement as pre-processing before topology execution,
+		 * or use a specialized processing function that accepts global config.
+		 * 
+		 * This case returns input unchanged as a fallback.
+		 */
 		return input;
 		
 	case FUNC_DEADZONE:
@@ -216,6 +246,7 @@ bool func_validate(const struct function_unit *func)
 		
 	case FUNC_DEADZONE:
 	case FUNC_SCALE:
+	case FUNC_SCALE_OFFSET:
 		return func->param_count == 1;
 		
 	case FUNC_CLAMP:
@@ -238,6 +269,8 @@ const char *func_get_name(enum function_type type)
 		return "Passthrough";
 	case FUNC_LINEAR:
 		return "Linear";
+	case FUNC_SCALE_OFFSET:
+		return "Scale/Offset";
 	case FUNC_DEADZONE:
 		return "Deadzone";
 	case FUNC_INVERT:

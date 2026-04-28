@@ -29,44 +29,160 @@ This feature introduces a flexible signal processing architecture using **virtua
    - Virtual port inputs (function unit inputs)
    - MIDI CC processor (final output stage)
 
-### Signal Flow
+### Signal Flow (Layered Architecture)
 
 ```
-┌─────────────────┐
-│ Accelerometer   │
-│  X, Y, Z        │
-└────────┬────────┘
-         │
-         v
-    ┌────────────────────────────────────┐
-    │      Virtual Port Fabric           │
-    │  ┌──────────┐  ┌──────────┐       │
-    │  │ VP[0]    │  │ VP[1]    │  ...  │
-    │  │ (mixer)  │  │ (mixer)  │       │
-    │  └────┬─────┘  └────┬─────┘       │
-    │       │             │              │
-    │       v             v              │
-    │  ┌─────────┐  ┌─────────┐         │
-    │  │ Func[0] │  │ Func[1] │  ...    │
-    │  │ Unit    │  │ Unit    │         │
-    │  └────┬────┘  └────┬────┘         │
-    │       │            │               │
-    │       v            v               │
-    │  ┌──────────┐  ┌──────────┐       │
-    │  │ VP[N]    │  │ VP[N+1]  │  ...  │
-    │  │ (mixer)  │  │ (mixer)  │       │
-    │  └────┬─────┘  └────┬─────┘       │
-    └───────┼─────────────┼──────────────┘
-            │             │
-            v             v
-       ┌─────────────────────┐
-       │  MIDI CC Processor  │
-       │  (CC mapping)       │
-       └─────────────────────┘
-                 │
-                 v
-           MIDI Output
+┌─────────────────────────────────────────────────────────┐
+│  HARDWARE LAYER (Shared Physical Resources)             │
+│  ┌──────────────────┐      ┌──────────────────┐        │
+│  │ Accelerometer    │      │ Gyroscope        │        │
+│  │ X, Y, Z (raw)    │      │ Roll, Pitch, Yaw │        │
+│  │ (int16_t mg)     │      │ (raw)            │        │
+│  └────────┬─────────┘      └────────┬─────────┘        │
+└───────────┼────────────────────────┼──────────────────┘
+            │                        │
+            v                        v
+┌─────────────────────────────────────────────────────────┐
+│  CALIBRATION LAYER (Shared Global Resources)            │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Global Scale/Offset Function                    │  │
+│  │  - Applies config.accel_scale[0..5]              │  │
+│  │  - Applies config.accel_offset[0..5]             │  │
+│  │  - Converts raw mg values to calibrated range    │  │
+│  │  (FUNC_SCALE_OFFSET type, shared resource)       │  │
+│  └──────────────────┬───────────────────────────────┘  │
+└─────────────────────┼──────────────────────────────────┘
+                      │ Calibrated sensor values
+                      v
+┌─────────────────────────────────────────────────────────┐
+│  TOPOLOGY LAYER (Per-Patch Signal Processing)           │
+│                                                          │
+│      Virtual Port Fabric & Function Units               │
+│  ┌──────────┐  ┌──────────┐                            │
+│  │ VP[0]    │  │ VP[1]    │  ...                       │
+│  │ (mixer)  │  │ (mixer)  │                            │
+│  └────┬─────┘  └────┬─────┘                            │
+│       │             │                                   │
+│       v             v                                   │
+│  ┌─────────┐  ┌─────────┐                              │
+│  │ Func[0] │  │ Func[1] │  ...                         │
+│  │ (LINEAR,│  │ (CURVE, │                              │
+│  │  etc.)  │  │  etc.)  │                              │
+│  └────┬────┘  └────┬────┘                              │
+│       │            │                                    │
+│       v            v                                    │
+│  ┌──────────┐  ┌──────────┐                            │
+│  │ VP[N]    │  │ VP[N+1]  │  ...                       │
+│  │ (mixer)  │  │ (mixer)  │                            │
+│  └────┬─────┘  └────┬─────┘                            │
+└───────┼─────────────┼──────────────────────────────────┘
+        │             │
+        v             v
+   ┌─────────────────────┐
+   │  MIDI CC Processor  │
+   │  (CC mapping)       │
+   └─────────────────────┘
+             │
+             v
+       MIDI Output
 ```
+
+### Architecture Layers
+
+**Hardware Layer**: Physical sensors provide raw readings. These are shared resources - all patches see the same sensor data.
+- Accelerometer: X, Y, Z axes (raw milli-g values)
+- Gyroscope: Roll, Pitch, Yaw (raw values)
+
+**Calibration Layer**: Global scale/offset transformation applies hardware calibration stored in `config.global.accel_scale[]` and `config.global.accel_offset[]`. This is a shared resource - one calibration applies to all patches.
+- Converts raw sensor readings to calibrated working range
+- Uses FUNC_SCALE_OFFSET function type
+- Configuration persisted in global settings
+
+**Topology Layer**: Per-patch signal routing and processing. Each patch can have different topology configurations.
+- Virtual ports provide signal routing fabric
+- Function units perform per-patch transformations (LINEAR, CURVE, etc.)
+- Multiple topology instances can run concurrently
+
+## Shared Resources
+
+### Sensor Sources (Hardware Layer)
+
+Sensor sources are **shared physical resources** that provide raw readings from hardware:
+
+```c
+// Sensor source identifiers (0-5)
+enum sensor_source {
+    SENSOR_ACCEL_X = 0,      // Accelerometer X-axis (raw mg)
+    SENSOR_ACCEL_Y = 1,      // Accelerometer Y-axis (raw mg)
+    SENSOR_ACCEL_Z = 2,      // Accelerometer Z-axis (raw mg)
+    SENSOR_GYRO_ROLL = 3,    // Gyroscope Roll (raw)
+    SENSOR_GYRO_PITCH = 4,   // Gyroscope Pitch (raw)
+    SENSOR_GYRO_YAW = 5,     // Gyroscope Yaw (raw)
+};
+```
+
+**Properties**:
+- Read-only - all patches see the same sensor values
+- Updated at sensor sampling rate (typically 100-200 Hz)
+- Values are raw hardware readings (e.g., milli-g for accelerometer)
+- No patch-specific filtering or transformation
+
+**Usage**: Sensor sources are referenced by topology instances via `accel_inputs[]` field.
+
+### Global Scale/Offset Function (Calibration Layer)
+
+The global scale/offset function is a **shared calibration resource** that transforms raw sensor readings into a calibrated working range:
+
+```c
+// Global scale/offset configuration (stored in config.global)
+struct global_config {
+    // ... other global settings ...
+    
+    // Scale/offset per sensor (6 sensors)
+    int16_t accel_scale[6];   // Full-scale range in milli-g (100-4000mg)
+    int16_t accel_offset[6];  // Center point offset in milli-g
+};
+```
+
+**Purpose**:
+- Hardware calibration - compensate for sensor mounting angle, drift, etc.
+- User preference - adjust sensitivity globally across all patches
+- Consistent behavior - same calibration applies to all patches
+
+**Function Type**: `FUNC_SCALE_OFFSET`
+- Input: Raw sensor value (int16_t, in milli-g)
+- Output: Calibrated value mapped to working range
+- Parameters: Read from global configuration (not per-function)
+
+**Example Calibration**:
+```c
+// X-axis: ±1g (1000mg) maps to MIDI 0-127
+accel_scale[0] = 1000;
+accel_offset[0] = 0;    // Neutral position at 0g
+
+// Y-axis: ±2g (2000mg) maps to MIDI 0-127, offset by +200mg
+accel_scale[1] = 2000;
+accel_offset[1] = 200;  // Neutral position at +0.2g
+```
+
+**Processing Formula**:
+```
+calibrated = ((raw - offset) * 127) / scale
+calibrated = CLAMP(calibrated, -32768, 32767)  // Keep as int16_t
+```
+
+**Shared Resource Properties**:
+- Single calibration applies to all patches
+- Cannot be overridden per-patch
+- Configuration stored in global settings (persists across power cycles)
+- Changes affect all active topologies immediately
+
+**Implementation Note**: The global scale/offset function can be implemented as:
+1. **Pre-processing**: Applied once before topology processing (recommended)
+2. **Function Unit**: Special FUNC_SCALE_OFFSET type that reads global config
+3. **Implicit**: Built into sensor read operations
+
+**Recommended Approach**: Pre-processing - apply calibration once per sensor reading before topology processing for efficiency.
 
 ## Virtual Port Architecture
 
@@ -325,6 +441,113 @@ struct patch_vport_config {
 4. **Feedback Delay**: Previous sample values for feedback paths
 
 **Decision**: TBD
+
+## Usage Examples
+
+### Example 1: Complete Processing with Global Calibration
+
+This example shows the recommended approach using the layered architecture:
+
+```c
+#include "topology_processor.h"
+#include "config_storage.h"
+
+void process_sensor_sample(void)
+{
+    static struct config_data config;
+    static struct topology_processor processor;
+    int16_t raw_sensor_values[6];
+    int16_t calibrated_values[6];
+    
+    /* 1. HARDWARE LAYER: Read raw sensor values */
+    read_accelerometer(&raw_sensor_values[0], &raw_sensor_values[1], &raw_sensor_values[2]);
+    read_gyroscope(&raw_sensor_values[3], &raw_sensor_values[4], &raw_sensor_values[5]);
+    
+    /* 2. CALIBRATION LAYER: Apply global scale/offset */
+    topo_proc_apply_global_calibration(
+        raw_sensor_values,
+        calibrated_values,
+        config.global.accel_scale,
+        config.global.accel_offset
+    );
+    
+    /* 3. TOPOLOGY LAYER: Process through virtual ports and functions */
+    topo_proc_set_accel_inputs(&processor, calibrated_values);
+    topo_proc_execute(&processor);
+    
+    /* 4. OUTPUT: Send MIDI CC messages */
+    for (int i = 0; i < MAX_MIDI_OUTPUTS; i++) {
+        uint8_t cc_value = topo_proc_get_midi_output(&processor, i);
+        send_midi_cc(16 + i, cc_value);  // CC 16-21
+    }
+}
+```
+
+### Example 2: Configure Global Calibration
+
+```c
+/* Set X-axis: ±1g maps to full working range */
+config.global.accel_scale[SENSOR_ACCEL_X] = 1000;  // 1000mg = 1g
+config.global.accel_offset[SENSOR_ACCEL_X] = 0;    // Neutral at 0g
+
+/* Set Y-axis: ±2g maps to full working range, with 200mg offset */
+config.global.accel_scale[SENSOR_ACCEL_Y] = 2000;  // 2000mg = 2g
+config.global.accel_offset[SENSOR_ACCEL_Y] = 200;  // Neutral at +0.2g
+
+/* Save to persistent storage */
+config_storage_save(&config);
+```
+
+### Example 3: Configure a Simple Topology (T1)
+
+```c
+/* Configure instance 0: X-axis → Linear function → MIDI CC 16 */
+struct topology_instance *topo = &config.patches[0].topologies[0];
+
+topo->topology_type = TOPO_T1;
+topo->accel_inputs[0] = SENSOR_ACCEL_X;
+topo->func_units[0] = 0;     // Use function unit 0
+topo->midi_outputs[0] = 16;  // Output to CC 16
+topo->enabled = 1;
+
+/* Configure the function unit for this topology */
+struct function_unit *func = &config.patches[0].functions[0];
+func_init_linear(func, 
+    -127, 127,    // Input range (calibrated sensor values)
+    0, 127        // Output range (MIDI)
+);
+```
+
+### Example 4: Architecture Layer Separation
+
+The three-layer architecture separates concerns:
+
+```
+┌─────────────────────────────────────────────┐
+│ HARDWARE LAYER                              │
+│ - Physical sensors (shared)                 │
+│ - Raw readings: X=+1234mg, Y=-567mg, Z=+890mg
+└─────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────┐
+│ CALIBRATION LAYER                           │
+│ - Global scale/offset (shared)              │
+│ - Apply: cal = ((raw - offset) * 127) / scale
+│ - Output: X=+62, Y=-36, Z=+45 (int16_t)     │
+└─────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────┐
+│ TOPOLOGY LAYER (per-patch)                  │
+│ - Virtual ports + function units            │
+│ - Per-patch transformations (LINEAR, etc.)  │
+│ - Output: MIDI CC values 0-127              │
+└─────────────────────────────────────────────┘
+```
+
+**Key Benefits**:
+1. **Hardware layer**: Multiple patches access same sensor data
+2. **Calibration layer**: One calibration applies everywhere (consistency)
+3. **Topology layer**: Each patch has unique signal processing
 
 ## Configuration Storage
 

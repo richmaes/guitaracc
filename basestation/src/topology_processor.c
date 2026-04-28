@@ -216,6 +216,48 @@ void topo_proc_set_accel_inputs(struct topology_processor *proc,
 	memcpy(proc->accel_values, accel_data, sizeof(proc->accel_values));
 }
 
+void topo_proc_apply_global_calibration(const int16_t raw_values[MAX_ACCEL_SOURCES],
+                                        int16_t calibrated_values[MAX_ACCEL_SOURCES],
+                                        const int16_t scale[MAX_ACCEL_SOURCES],
+                                        const int16_t offset[MAX_ACCEL_SOURCES])
+{
+	if (!raw_values || !calibrated_values || !scale || !offset) {
+		return;
+	}
+	
+	/* Apply calibration formula for each sensor:
+	 * calibrated = ((raw - offset) * 127) / scale
+	 * 
+	 * This transforms raw sensor readings (e.g., milli-g) into a normalized
+	 * range where ±scale maps to approximately ±127 MIDI units.
+	 * 
+	 * Example: If scale=2000 (±2g) and offset=0:
+	 *   raw = -2000mg  → calibrated ≈ -127
+	 *   raw =     0mg  → calibrated =    0
+	 *   raw = +2000mg  → calibrated ≈ +127
+	 */
+	for (int i = 0; i < MAX_ACCEL_SOURCES; i++) {
+		/* Skip if scale is zero (would cause divide by zero) */
+		if (scale[i] == 0) {
+			calibrated_values[i] = 0;
+			continue;
+		}
+		
+		/* Apply offset and scale */
+		int32_t adjusted = (int32_t)raw_values[i] - (int32_t)offset[i];
+		int32_t scaled = (adjusted * 127) / (int32_t)scale[i];
+		
+		/* Clamp to int16_t range (not MIDI range yet - that happens later) */
+		if (scaled < -32768) {
+			scaled = -32768;
+		} else if (scaled > 32767) {
+			scaled = 32767;
+		}
+		
+		calibrated_values[i] = (int16_t)scaled;
+	}
+}
+
 int topo_proc_execute(struct topology_processor *proc)
 {
 	if (!proc || !proc->current_patch) {

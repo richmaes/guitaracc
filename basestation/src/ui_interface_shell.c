@@ -944,6 +944,9 @@ static int cmd_config_export(const struct shell *sh, size_t argc, char **argv)
 	/* Print JSON header */
 	shell_print(sh, "{");
 	shell_print(sh, "  \"version\": 1,");
+	shell_print(sh, "  \"firmware_version\": \"1.0.0\",");
+	shell_print(sh, "  \"patch_count\": %d,", NUM_PATCHES);
+	shell_print(sh, "  \"current_patch\": %d,", cfg.global.default_patch);
 	shell_print(sh, "  \"config\": {");
 	
 	/* Export global section */
@@ -955,7 +958,13 @@ static int cmd_config_export(const struct shell *sh, size_t argc, char **argv)
 		shell_print(sh, "      \"ble_scan_interval_ms\": %d,", cfg.global.scan_interval_ms);
 		shell_print(sh, "      \"led_brightness\": %d,", cfg.global.led_brightness);
 		shell_print(sh, "      \"running_average_enable\": %s,", json_bool(cfg.global.running_average_enable));
-		shell_print(sh, "      \"running_average_depth\": %d", cfg.global.running_average_depth);
+		shell_print(sh, "      \"running_average_depth\": %d,", cfg.global.running_average_depth);
+		shell_print(sh, "      \"accel_scale\": [%d, %d, %d, %d, %d, %d],", 
+			cfg.global.accel_scale[0], cfg.global.accel_scale[1], cfg.global.accel_scale[2],
+			cfg.global.accel_scale[3], cfg.global.accel_scale[4], cfg.global.accel_scale[5]);
+		shell_print(sh, "      \"accel_offset\": [%d, %d, %d, %d, %d, %d]", 
+			cfg.global.accel_offset[0], cfg.global.accel_offset[1], cfg.global.accel_offset[2],
+			cfg.global.accel_offset[3], cfg.global.accel_offset[4], cfg.global.accel_offset[5]);
 		shell_print(sh, "    }%s", export_patches ? "," : "");
 	}
 	

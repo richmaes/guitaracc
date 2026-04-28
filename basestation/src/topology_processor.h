@@ -56,6 +56,29 @@ void topo_proc_set_accel_inputs(struct topology_processor *proc,
                                 const int16_t accel_data[MAX_ACCEL_SOURCES]);
 
 /**
+ * @brief Apply global scale/offset calibration to sensor values
+ * 
+ * This is a helper function that applies global calibration to raw sensor
+ * readings. It reads scale and offset from global configuration and produces
+ * calibrated values suitable for topology processing.
+ * 
+ * This implements the CALIBRATION LAYER from the architecture:
+ *   calibrated = ((raw - offset) * 127) / scale
+ * 
+ * Recommended usage: Call this once per sample before topo_proc_execute()
+ * to pre-process all sensor values with global calibration.
+ * 
+ * @param raw_values Array of 6 raw sensor readings (milli-g or raw units)
+ * @param calibrated_values Output array of 6 calibrated values (int16_t)
+ * @param scale Array of 6 scale values from config.global.accel_scale[]
+ * @param offset Array of 6 offset values from config.global.accel_offset[]
+ */
+void topo_proc_apply_global_calibration(const int16_t raw_values[MAX_ACCEL_SOURCES],
+                                        int16_t calibrated_values[MAX_ACCEL_SOURCES],
+                                        const int16_t scale[MAX_ACCEL_SOURCES],
+                                        const int16_t offset[MAX_ACCEL_SOURCES]);
+
+/**
  * @brief Process all enabled topology instances
  * 
  * Executes all enabled topologies in the current patch and produces

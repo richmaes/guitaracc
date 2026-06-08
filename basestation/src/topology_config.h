@@ -118,6 +118,22 @@ uint8_t topology_get_function_count(enum topology_type type);
 uint8_t topology_get_midi_output_count(enum topology_type type);
 
 /**
+ * @brief Get the number of virtual ports used by a topology type
+ * 
+ * @param type Topology type enum value
+ * @return Number of VPs (2 for T1/T2, 3 for T3/T4), or 0 for invalid/disabled
+ */
+uint8_t topology_get_vport_count(enum topology_type type);
+
+/**
+ * @brief Get the human-readable name for a sensor source
+ * 
+ * @param source_idx Sensor source index (0-5)
+ * @return String name (ACCEL_X, ACCEL_Y, ACCEL_Z, GYRO_ROLL, GYRO_PITCH, GYRO_YAW)
+ */
+const char *topology_get_sensor_name(uint8_t source_idx);
+
+/**
  * @brief Initialize a topology instance with defaults
  * 
  * @param topo Pointer to topology instance

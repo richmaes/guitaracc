@@ -1381,14 +1381,56 @@ static int cmd_vport_show(const struct shell *sh, size_t argc, char **argv)
 		return -EIO;
 	}
 	
+	/* Load configuration to get topology info */
+	struct config_data cfg;
+	int err = config_storage_load(&cfg);
+	if (err) {
+		shell_error(sh, "Failed to load configuration");
+		return err;
+	}
+	
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= NUM_PATCHES) patch_idx = 0;
+	
+	const struct topology_instance *topo = &cfg.patches[patch_idx].topologies[instance];
+	
+	/* Check if instance is enabled */
+	if (!topo->enabled || topo->topology_type == TOPO_DISABLED) {
+		shell_warn(sh, "Instance %d is disabled", instance);
+		return 0;
+	}
+	
+	/* Get topology characteristics */
+	uint8_t num_vports = topology_get_vport_count(topo->topology_type);
+	uint8_t num_inputs = topology_get_accel_input_count(topo->topology_type);
+	
 	/* Virtual ports are allocated: instance_idx * 3 + offset */
 	uint8_t vp_base = instance * 3;
+	
+	/* Build sensor sources string */
+	char sources_str[128];
+	int pos = 0;
+	for (int i = 0; i < num_inputs; i++) {
+		uint8_t sensor_idx = topo->accel_inputs[i];
+		if (sensor_idx >= MAX_ACCEL_SOURCES) continue;
+		
+		int16_t sensor_value = proc->accel_values[sensor_idx];
+		const char *sensor_name = topology_get_sensor_name(sensor_idx);
+		
+		if (i > 0 && pos < sizeof(sources_str)) {
+			pos += snprintf(sources_str + pos, sizeof(sources_str) - pos, " ");
+		}
+		if (pos < sizeof(sources_str)) {
+			pos += snprintf(sources_str + pos, sizeof(sources_str) - pos, "%s=%d", 
+				sensor_name, sensor_value);
+		}
+	}
 	
 	if (argc >= 3) {
 		/* Show specific virtual port */
 		int offset = atoi(argv[2]);
-		if (offset < 0 || offset > 2) {
-			shell_error(sh, "Invalid vport offset: %d (must be 0-2)", offset);
+		if (offset < 0 || offset >= num_vports) {
+			shell_error(sh, "Invalid vport offset: %d (must be 0-%d)", offset, num_vports-1);
 			return -EINVAL;
 		}
 		
@@ -1402,14 +1444,22 @@ static int cmd_vport_show(const struct shell *sh, size_t argc, char **argv)
 		int16_t raw_value = vport_read_raw(&proc->vport_system, vp_num);
 		uint8_t input_count = vport_get_input_count(&proc->vport_system, vp_num);
 		
-		shell_print(sh, "Instance %d, VP[%d] (absolute VP %d):", instance, offset, vp_num);
-		shell_print(sh, "  Value (MIDI): %d", value);
-		shell_print(sh, "  Value (raw): %d", raw_value);
-		shell_print(sh, "  Input count: %d", input_count);
+		shell_print(sh, "Instance %d [%s], VP[%d] (abs %d):", 
+			instance, topology_get_name(topo->topology_type), offset, vp_num);
+		shell_print(sh, "  Sources: %s", sources_str);
+		
+		/* Only show MIDI for output VPs (offset > 0), VP[0] is always input */
+		if (offset > 0) {
+			shell_print(sh, "  MIDI: %d  raw: %d  inputs: %d", value, raw_value, input_count);
+		} else {
+			shell_print(sh, "  raw: %d  inputs: %d", raw_value, input_count);
+		}
 	} else {
 		/* Show all virtual ports for this instance */
-		shell_print(sh, "Virtual Ports for Instance %d:", instance);
-		for (int offset = 0; offset < 3; offset++) {
+		shell_print(sh, "Instance %d [%s]:", instance, topology_get_name(topo->topology_type));
+		
+		/* Show only the VPs used by this topology */
+		for (int offset = 0; offset < num_vports; offset++) {
 			uint8_t vp_num = vp_base + offset;
 			if (vp_num >= MAX_VIRTUAL_PORTS) {
 				break;
@@ -1419,8 +1469,14 @@ static int cmd_vport_show(const struct shell *sh, size_t argc, char **argv)
 			int16_t raw_value = vport_read_raw(&proc->vport_system, vp_num);
 			uint8_t input_count = vport_get_input_count(&proc->vport_system, vp_num);
 			
-			shell_print(sh, "  VP[%d] (abs %d): MIDI=%3d raw=%5d inputs=%d", 
-				offset, vp_num, value, raw_value, input_count);
+			/* Only show MIDI for output VPs (offset > 0), VP[0] is always input */
+			if (offset > 0) {
+				shell_print(sh, "  VP[%d] (abs %d): Sources: %s | MIDI=%3d raw=%5d inputs=%d", 
+					offset, vp_num, sources_str, value, raw_value, input_count);
+			} else {
+				shell_print(sh, "  VP[%d] (abs %d): Sources: %s | raw=%5d inputs=%d", 
+					offset, vp_num, sources_str, raw_value, input_count);
+			}
 		}
 	}
 	

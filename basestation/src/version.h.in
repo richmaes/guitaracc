@@ -1,0 +1,16 @@
+/*
+ * Copyright (c) 2026 GuitarAcc Project
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Automatically generated from version.h.in - DO NOT EDIT
+ */
+
+#ifndef VERSION_H_
+#define VERSION_H_
+
+#define FIRMWARE_VERSION "@PROJECT_VERSION@"
+#define FIRMWARE_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define FIRMWARE_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define FIRMWARE_VERSION_PATCH @PROJECT_VERSION_PATCH@
+
+#endif /* VERSION_H_ */

@@ -184,6 +184,80 @@ export MAKEFLAGS="-j8"    # Use 8 parallel jobs
 make all
 ```
 
+## Version Management
+
+The firmware version is managed through CMake and automatically propagated throughout the codebase.
+
+### Changing the Version
+
+To update the firmware version, edit **one file only**:
+
+**File:** `basestation/CMakeLists.txt`
+
+```cmake
+project(guitaracc_basestation VERSION 0.2.0)
+#                                     ^^^^^^
+#                               Change version here
+```
+
+The version follows semantic versioning: `MAJOR.MINOR.PATCH`
+
+### How It Works
+
+1. **CMakeLists.txt** defines the version in the `project()` command
+2. **CMake processes** the template file `src/version.h.in` during configuration
+3. **Generated header** is created at `build/basestation/include/version.h`
+4. **Source code** includes `version.h` to access the version string
+
+### Generated Header
+
+CMake automatically creates this header:
+
+```c
+// build/basestation/include/version.h (auto-generated)
+#define FIRMWARE_VERSION "0.2.0"
+#define FIRMWARE_VERSION_MAJOR 0
+#define FIRMWARE_VERSION_MINOR 2
+#define FIRMWARE_VERSION_PATCH 0
+```
+
+### Using the Version in Code
+
+Include the generated header in any source file:
+
+```c
+#include "version.h"
+
+// Use the version string
+shell_print(sh, "Firmware version: %s", FIRMWARE_VERSION);
+
+// Or use individual components
+if (FIRMWARE_VERSION_MAJOR >= 1) {
+    // Enable new features
+}
+```
+
+### Where the Version Appears
+
+The version is displayed in:
+- CLI `status` command output
+- Configuration export JSON (`firmware_version` field)
+- Any other code that includes `version.h`
+
+### After Changing the Version
+
+After updating the version in CMakeLists.txt:
+
+```bash
+# Rebuild to regenerate the version header
+make rebuild-basestation
+
+# Or from the basestation directory
+west build -b nrf5340_audio_dk_nrf5340_cpuapp --pristine
+```
+
+The new version will be automatically reflected everywhere in the code.
+
 ## Adding Tests for Client
 
 When you create tests for the client application:

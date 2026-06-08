@@ -117,6 +117,40 @@ uint8_t topology_get_midi_output_count(enum topology_type type)
 	}
 }
 
+uint8_t topology_get_vport_count(enum topology_type type)
+{
+	switch (type) {
+	case TOPO_T1:
+	case TOPO_T2:
+		return 2;  /* Input VP + Output VP */
+	case TOPO_T3:
+	case TOPO_T4:
+		return 3;  /* Input VP + 2 Output VPs (or intermediate + 2 outputs) */
+	default:
+		return 0;
+	}
+}
+
+const char *topology_get_sensor_name(uint8_t source_idx)
+{
+	switch (source_idx) {
+	case 0:
+		return "ACCEL_X";
+	case 1:
+		return "ACCEL_Y";
+	case 2:
+		return "ACCEL_Z";
+	case 3:
+		return "GYRO_ROLL";
+	case 4:
+		return "GYRO_PITCH";
+	case 5:
+		return "GYRO_YAW";
+	default:
+		return "UNKNOWN";
+	}
+}
+
 void topology_init_default(struct topology_instance *topo, enum topology_type type)
 {
 	if (!topo) {

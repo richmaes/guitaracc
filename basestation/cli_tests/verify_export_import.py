@@ -15,6 +15,7 @@ import sys
 import json
 import tempfile
 import os
+import argparse
 from select_port import select_port
 
 
@@ -466,7 +467,11 @@ def test_apply_config_via_cli(ser):
 
 
 def main():
-    port = select_port(auto_select=True)
+    parser = argparse.ArgumentParser(description='Verify configuration export/import functionality')
+    parser.add_argument('--port', help='Serial port to use (e.g., /dev/tty.usbmodem123)')
+    args = parser.parse_args()
+    
+    port = args.port if args.port else select_port(auto_select=True)
     if port is None:
         print("No port selected. Exiting.")
         sys.exit(1)
@@ -538,10 +543,10 @@ def main():
         ser.close()
         
         if all_passed:
-            print("\n✓✓✓ ALL TESTS PASSED ✓✓✓")
+            print("\nTEST PASSED: Configuration Export/Import Verification")
             sys.exit(0)
         else:
-            print("\n✗✗✗ SOME TESTS FAILED ✗✗✗")
+            print("\nTEST FAILED: Configuration Export/Import Verification - one or more test cases failed")
             sys.exit(1)
         
     except Exception as e:

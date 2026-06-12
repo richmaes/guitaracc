@@ -8,6 +8,7 @@ import serial
 import time
 import sys
 import random
+import argparse
 from select_port import select_port
 
 def send_command(ser, cmd, wait_time=0.5, verbose=True):
@@ -150,7 +151,11 @@ def verify_patch_config(ser, patch_num, expected_config, debug=False):
     return errors
 
 def main():
-    port = select_port(auto_select=True)
+    parser = argparse.ArgumentParser(description='Verify 16-patch limit and persistence')
+    parser.add_argument('--port', help='Serial port to use (e.g., /dev/tty.usbmodem123)')
+    args = parser.parse_args()
+    
+    port = args.port if args.port else select_port(auto_select=True)
     if port is None:
         print("No port selected. Exiting.")
         sys.exit(1)
@@ -273,10 +278,15 @@ def main():
         ser.close()
         
         if all_passed and switch_test_passed:
-            print("\n✓✓✓ ALL TESTS PASSED ✓✓✓")
+            print("\nTEST PASSED: Patch Count & Persistence Verification")
             sys.exit(0)
         else:
-            print("\n✗✗✗ SOME TESTS FAILED ✗✗✗")
+            reason = []
+            if not all_passed:
+                reason.append(f"{len(failed_patches)} patches failed verification")
+            if not switch_test_passed:
+                reason.append("patch switching failed")
+            print(f"\nTEST FAILED: Patch Count & Persistence Verification - {', '.join(reason)}")
             sys.exit(1)
         
     except Exception as e:

@@ -16,3 +16,8 @@ BLE-based guitar accessory system with two applications:
 
 ## Important Context Files
 - **ARCHITECTURE.md**: System architecture, BLE roles, and data flow concepts. Always reference this file when working on BLE functionality or system design.
+- **CLI.md**: Command-line interface overview and usage. Reference this when working on shell commands, configuration interface, or serial communication.
+- **docs/specs/**: Protocol specifications shared with GUI and external applications. This is the source of truth for communication protocols:
+  - **ble-protocol.md**: BLE service/characteristic definitions
+  - **midi-commands.md**: MIDI message formats and mapping specifications
+  - **serial-protocol.md**: USB/Serial command interface

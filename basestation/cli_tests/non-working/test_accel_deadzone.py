@@ -18,6 +18,7 @@ import serial
 import time
 import sys
 import re
+import argparse
 from select_port import select_port
 
 
@@ -222,8 +223,13 @@ def main():
         print("\nTest skipped by user.")
         return 0
     
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Interactive accelerometer deadzone test')
+    parser.add_argument('--port', help='Serial port to use (e.g., /dev/tty.usbmodem123)')
+    args = parser.parse_args()
+    
     # Select serial port
-    port = select_port()
+    port = args.port if args.port else select_port()
     if not port:
         print("ERROR: No serial port selected")
         return 1

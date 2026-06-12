@@ -2,6 +2,15 @@
 
 This directory contains various test and verification scripts for the GuitarAcc basestation firmware.
 
+## Port Selection
+
+All test scripts support the `--port` flag to specify a serial port:
+```bash
+python3 cli_tests/test_shell.py --port /dev/tty.usbmodem123
+```
+
+If `--port` is not specified, the script will auto-detect available USB modem ports or present a menu if multiple devices are found.
+
 ## Regression Test Suite
 
 ### Quick Start
@@ -33,7 +42,7 @@ Use the `-i` or `--interactive` flag to include interactive tests.
 ## Individual Test Scripts
 
 ### 1. Patch Count & Persistence Test
-**Script:** `verify_patch_count.py`
+**Script:** `cli_tests/verify_patch_count.py`
 
 Tests the 16-patch configuration system:
 - Validates patch selection boundaries (0-15 valid, 16+ rejected)
@@ -44,7 +53,7 @@ Tests the 16-patch configuration system:
 
 **Run:**
 ```bash
-./verify_patch_count.py
+./cli_tests/verify_patch_count.py
 ```
 
 **What it tests:**
@@ -55,7 +64,7 @@ Tests the 16-patch configuration system:
 - ✓ Patch switching integrity
 
 ### 2. Configuration Export/Import Test
-**Script:** `verify_export_import.py`
+**Script:** `cli_tests/verify_export_import.py`
 
 Tests the JSON-based config export/import functionality:
 - Validates full configuration export (global + all 16 patches)
@@ -68,7 +77,7 @@ Tests the JSON-based config export/import functionality:
 
 **Run:**
 ```bash
-./verify_export_import.py
+./cli_tests/verify_export_import.py
 ```
 
 **What it tests:**
@@ -137,20 +146,29 @@ Python utility for configuration management via serial port:
 ./config_tool.py import -i config.json
 ```
 
-### select_port.py
-Helper module for automatic serial port selection. Used by other scripts to automatically detect and select the correct USB serial port.
-
 ## Test Organization
 
 ```
 basestation/
 ├── run_regression_tests.sh       # Main regression test runner
-├── verify_patch_count.py          # Test 1: Patch persistence (automated)
-├── verify_export_import.py        # Test 2: Export/import (automated)
-├── test_accel_deadzone.py         # Test 3: Deadzone filtering (interactive)
 ├── config_tool.py                 # Configuration management utility
-├── select_port.py                 # Port selection helper
-├── test_*.py                      # Other unit tests
+├── cli_tests/                     # Python CLI test suite
+│   ├── README.md                  # Test organization overview
+│   ├── select_port.py             # Port selection helper
+│   ├── test_shell.py              # Basic shell connectivity
+│   ├── test_config.py             # Config command tests
+│   ├── test_persistence.py        # Configuration persistence
+│   ├── test_midi_rx.py            # MIDI receive tests
+│   ├── test_shell_direct.py       # Direct shell access
+│   ├── verify_patch_count.py      # Patch persistence (automated)
+│   ├── verify_export_import.py    # Export/import (automated)
+│   ├── non-working/               # Tests needing minor updates
+│   │   ├── README.md
+│   │   ├── test_accel_deadzone.py # Deadzone (interactive)
+│   │   └── ...
+│   └── broken/                    # Tests needing major rewrites
+│       ├── README.md
+│       └── ...
 └── test/                          # C unit tests
     ├── Makefile
     └── test_*.c

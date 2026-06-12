@@ -23,10 +23,10 @@ Client 4 (Thingy:53) ──┘
   - Converts motion data to MIDI commands
   - Outputs MIDI stream via UART at 31.25 kbaud
   - Provides RGB LED visual feedback for system state
-  - Serial UI interface on UART1 at 115200 baud (VCOM0)
+  - Serial CLI interface for configuration and monitoring
 
 **→ See [basestation/ARCHITECTURE.md](basestation/ARCHITECTURE.md) for detailed implementation**  
-**→ See [basestation/UI_INTERFACE.md](basestation/UI_INTERFACE.md) for UI interface details**
+**→ See [CLI.md](CLI.md) for command-line interface details**
 
 ### Client Application
 - **Hardware**: Thingy:53

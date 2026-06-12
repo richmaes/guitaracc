@@ -97,10 +97,10 @@ echo "========================================================================"
 echo ""
 
 # Test 1: Patch Count and Persistence
-run_test "Patch Count & Persistence" "./verify_patch_count.py" || true
+run_test "Patch Count & Persistence" "./cli_tests/verify_patch_count.py" || true
 
 # Test 2: Configuration Export/Import
-run_test "Configuration Export/Import" "./verify_export_import.py" || true
+run_test "Configuration Export/Import" "./cli_tests/verify_export_import.py" || true
 
 # Interactive Tests (only if -i flag is set)
 if [ "$RUN_INTERACTIVE" = true ]; then
@@ -113,7 +113,7 @@ if [ "$RUN_INTERACTIVE" = true ]; then
     echo ""
     
     # Test 3: Accelerometer Deadzone
-    run_test "Accelerometer Deadzone" "./test_accel_deadzone.py" || true
+    run_test "Accelerometer Deadzone" "./cli_tests/non-working/test_accel_deadzone.py" || true
 else
     echo ""
     echo "========================================================================"

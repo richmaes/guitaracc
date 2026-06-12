@@ -5,6 +5,7 @@
 
 #include "ui_interface.h"
 #include "config_storage.h"
+#include "firmware_version.h"
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/logging/log.h>

@@ -100,6 +100,11 @@ static struct accel_mapping_config z_axis_config;
 /* Current configuration */
 static struct config_data current_config;
 
+/* Pipeline snapshot storage for on-demand queries */
+static struct pipeline_snapshot last_pipeline_data = {
+	.valid = false
+};
+
 /* Configuration reload callback (defined in ui_interface.c) */
 extern void (*ui_config_reload_callback)(void);
 
@@ -405,67 +410,117 @@ int send_midi_realtime(uint8_t rt_byte)
 	return queue_midi_rt_bytes(&rt_byte, 1);
 }
 
-/* Process acceleration data and convert to MIDI CC */
+/* Get pipeline snapshot for on-demand queries */
+int get_pipeline_snapshot(struct pipeline_snapshot *snapshot)
+{
+	if (!snapshot) {
+		return -EINVAL;
+	}
+	
+	if (!last_pipeline_data.valid) {
+		return -ENODATA;
+	}
+	
+	/* Copy the snapshot */
+	memcpy(snapshot, &last_pipeline_data, sizeof(struct pipeline_snapshot));
+	return 0;
+}
+
+/* Process acceleration data and convert to MIDI CC using rotation pipeline */
 static void process_accel_data(const struct accel_data *accel, int guitar_id)
 {
-	static uint8_t last_cc_x = 255;  /* Initialize to invalid value to force first send */
-	static uint8_t last_cc_y = 255;
-	static uint8_t last_cc_z = 255;
+	static uint8_t last_cc_value = 255;  /* Initialize to invalid value to force first send */
 	
-	uint8_t cc_x, cc_y, cc_z;
-	bool send_x = false, send_y = false, send_z = false;
-	
-	/* Convert acceleration to MIDI CC values using custom mappings */
-	cc_x = accel_to_midi_cc(accel->x, &x_axis_config);
-	cc_y = accel_to_midi_cc(accel->y, &y_axis_config);
-	cc_z = accel_to_midi_cc(accel->z, &z_axis_config);
+	uint8_t cc_value, cc_number;
+	bool send_cc = false;
 	
 	/* Get active patch index */
 	uint8_t patch_idx = current_config.global.default_patch;
 	if (patch_idx >= 16) patch_idx = 0;
 	
+	/* Store intermediate values for monitoring */
+	struct vector3d vec_input, vec_rotated, vec_normalized;
+	float scalar_value = 0.0f;
+	
+	/* Convert milli-g to g and create vector */
+	vec_input.x = (float)accel->x / 1000.0f;
+	vec_input.y = (float)accel->y / 1000.0f;
+	vec_input.z = (float)accel->z / 1000.0f;
+	
+	/* Copy for rotation */
+	vec_rotated = vec_input;
+	
+	/* Apply angular rotation */
+	apply_rotation(&vec_rotated, 
+	              current_config.patches[patch_idx].rotation_pipeline.rho_angle,
+	              current_config.patches[patch_idx].rotation_pipeline.theta_angle);
+	
+	/* Copy for normalization */
+	vec_normalized = vec_rotated;
+	
+	/* Normalize to unit vector */
+	if (!normalize_vector(&vec_normalized)) {
+		/* If normalization fails (zero vector), return mid-range */
+		cc_value = 64;
+		cc_number = current_config.patches[patch_idx].rotation_pipeline.midi_cc;
+		scalar_value = 0.0f;
+	} else {
+		/* Project to 1D (X-axis component) */
+		scalar_value = vec_normalized.x;
+		
+		/* Convert scalar to MIDI */
+		cc_value = scalar_to_midi(scalar_value, 
+		                          current_config.patches[patch_idx].rotation_pipeline.func_type,
+		                          &current_config.patches[patch_idx].rotation_pipeline.params);
+		cc_number = current_config.patches[patch_idx].rotation_pipeline.midi_cc;
+	}
+	
+	/* Update pipeline snapshot for on-demand queries */
+	last_pipeline_data.timestamp_ms = k_uptime_get_32();
+	last_pipeline_data.valid = true;
+	last_pipeline_data.raw_axis.x = accel->x;
+	last_pipeline_data.raw_axis.y = accel->y;
+	last_pipeline_data.raw_axis.z = accel->z;
+	last_pipeline_data.input_vector.x = vec_input.x;
+	last_pipeline_data.input_vector.y = vec_input.y;
+	last_pipeline_data.input_vector.z = vec_input.z;
+	last_pipeline_data.rotated_vector.x = vec_rotated.x;
+	last_pipeline_data.rotated_vector.y = vec_rotated.y;
+	last_pipeline_data.rotated_vector.z = vec_rotated.z;
+	last_pipeline_data.normalized_vector.x = vec_normalized.x;
+	last_pipeline_data.normalized_vector.y = vec_normalized.y;
+	last_pipeline_data.normalized_vector.z = vec_normalized.z;
+	last_pipeline_data.scalar_projection = scalar_value;
+	last_pipeline_data.function_type = current_config.patches[patch_idx].rotation_pipeline.func_type;
+	last_pipeline_data.midi_output.cc = cc_number;
+	last_pipeline_data.midi_output.value = cc_value;
+
 	/* Get deadzone threshold from patch config */
 	int16_t deadzone = current_config.patches[patch_idx].accel_deadzone;
 	if (deadzone < 0) deadzone = 0;  /* Sanity check */
 	
-	/* Check if CC values have changed by more than deadzone threshold */
-	int16_t delta_x = (int16_t)cc_x - (int16_t)last_cc_x;
-	int16_t delta_y = (int16_t)cc_y - (int16_t)last_cc_y;
-	int16_t delta_z = (int16_t)cc_z - (int16_t)last_cc_z;
+	/* Check if CC value has changed by more than deadzone threshold */
+	int16_t delta = (int16_t)cc_value - (int16_t)last_cc_value;
 	
-	/* Make deltas absolute */
-	if (delta_x < 0) delta_x = -delta_x;
-	if (delta_y < 0) delta_y = -delta_y;
-	if (delta_z < 0) delta_z = -delta_z;
+	/* Make delta absolute */
+	if (delta < 0) delta = -delta;
 	
 	/* Only send if change exceeds deadzone (or first time: last_cc == 255) */
-	send_x = (last_cc_x == 255) || (delta_x >= deadzone);
-	send_y = (last_cc_y == 255) || (delta_y >= deadzone);
-	send_z = (last_cc_z == 255) || (delta_z >= deadzone);
+	send_cc = (last_cc_value == 255) || (delta >= deadzone);
 	
-	/* Send MIDI CC messages only for axes that changed significantly */
-	if (send_x) {
-		send_midi_cc(current_config.global.midi_channel, current_config.patches[patch_idx].cc_mapping[0], cc_x);
-		last_cc_x = cc_x;
-	}
-	if (send_y) {
-		send_midi_cc(current_config.global.midi_channel, current_config.patches[patch_idx].cc_mapping[1], cc_y);
-		last_cc_y = cc_y;
-	}
-	if (send_z) {
-		send_midi_cc(current_config.global.midi_channel, current_config.patches[patch_idx].cc_mapping[2], cc_z);
-		last_cc_z = cc_z;
-	}
-	
-	/* Brief LED flash to indicate MIDI activity (only if something was sent) */
-	if (send_x || send_y || send_z) {
+	/* Send MIDI CC message if value changed significantly */
+	if (send_cc) {
+		send_midi_cc(current_config.global.midi_channel, cc_number, cc_value);
+		last_cc_value = cc_value;
+		
+		/* Brief LED flash to indicate MIDI activity */
 		ui_led_flash(UI_LED_WHITE, 30);  /* 30ms white flash */
 	}
 	
 #if BLE_DEBUG
-	LOG_INF("Accel: x=%d y=%d z=%d -> MIDI: %d %d %d %s", 
-		accel->x, accel->y, accel->z, cc_x, cc_y, cc_z,
-		(send_x || send_y || send_z) ? "" : "(filtered)");
+	LOG_INF("Accel: x=%d y=%d z=%d -> MIDI CC%d: %d %s", 
+		accel->x, accel->y, accel->z, cc_number, cc_value,
+		send_cc ? "" : "(filtered)");
 #endif
 }
 

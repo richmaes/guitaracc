@@ -88,4 +88,62 @@ int send_midi_realtime(uint8_t rt_byte);
  */
 extern void (*ui_config_reload_callback)(void);
 
+/**
+ * @brief Pipeline snapshot data structure
+ * 
+ * Contains the most recent pipeline processing values for on-demand queries
+ */
+struct pipeline_snapshot {
+	uint32_t timestamp_ms;           /* System uptime when captured */
+	bool valid;                      /* True if data has been captured at least once */
+	
+	/* Raw accelerometer values */
+	struct {
+		int16_t x;
+		int16_t y;
+		int16_t z;
+	} raw_axis;
+	
+	/* Pipeline processing stages */
+	struct {
+		float x;
+		float y;
+		float z;
+	} input_vector;
+	
+	struct {
+		float x;
+		float y;
+		float z;
+	} rotated_vector;
+	
+	struct {
+		float x;
+		float y;
+		float z;
+	} normalized_vector;
+	
+	float scalar_projection;
+	
+	/* Pipeline configuration */
+	uint8_t function_type;  /* 0=linear, 1=exponential, 2=scurve, 3=lookup */
+	
+	/* MIDI output */
+	struct {
+		uint8_t cc;
+		uint8_t value;
+	} midi_output;
+};
+
+/**
+ * @brief Get the most recent pipeline processing snapshot
+ * 
+ * Returns the last captured pipeline values. Call this on-demand to see
+ * current pipeline state without enabling continuous monitoring.
+ * 
+ * @param snapshot Output buffer for snapshot data
+ * @return 0 on success, -ENODATA if no data captured yet
+ */
+int get_pipeline_snapshot(struct pipeline_snapshot *snapshot);
+
 #endif /* UI_INTERFACE_H */

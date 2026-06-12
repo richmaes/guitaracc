@@ -286,6 +286,9 @@ void config_storage_get_hardcoded_defaults(struct config_data *data)
 		data->patches[p].accel_deadzone = 1;  /* MIDI CC change threshold (1 = send on any change) */
 		snprintf(data->patches[p].patch_name, sizeof(data->patches[p].patch_name), 
 		         "Patch %d", p);
+		
+		/* Initialize rotation pipeline with defaults */
+		accel_rotation_init_defaults(&data->patches[p].rotation_pipeline);
 	}
 }
 

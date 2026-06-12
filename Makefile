@@ -90,96 +90,96 @@ test-integration:
 # Build Targets
 #==============================================================================
 
-build: test check-west build-basestation build-client
+build: test build-basestation build-client
 	@echo ""
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(GREEN)✅ All applications built successfully!$(NC)"
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo ""
 	@echo "Build artifacts:"
-	@echo "  Basestation: basestation/build/zephyr/zephyr.hex"
-	@echo "  Client:      client/build/zephyr/merged.hex (DFU package)"
+	@echo "  Basestation: basestation/build/basestation/zephyr/zephyr.hex"
+	@echo "  Client:      client/build/client/zephyr/merged.hex (DFU package)"
 	@echo ""
 
-build-basestation: check-west
+build-basestation:
 	@echo ""
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Building Basestation for nRF5340 Audio DK$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@mkdir -p basestation/build
-	@if [ ! -f basestation/build/build.ninja ]; then \
-		echo "$(YELLOW)Build directory incomplete, running pristine build...$(NC)"; \
-		cd basestation && west build -b nrf5340_audio_dk/nrf5340/cpuapp --build-dir build --pristine 2>&1 | tee build/build.log; \
-	else \
-		cd basestation && west build -b nrf5340_audio_dk/nrf5340/cpuapp --build-dir build 2>&1 | tee build/build.log; \
-	fi
+	@.github/skills/guitaracc-build/scripts/build.sh basestation
 	@$(MAKE) validate-basestation-overlays
 	@echo "$(GREEN)✓ Basestation build complete$(NC)"
+	@echo "$(GREEN)  Artifacts: basestation/build/basestation/zephyr/$(NC)"
 
-build-client: check-west
+build-client:
 	@echo ""
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Building Client for Thingy:53$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@mkdir -p client/build
-	@cd client && CMAKE=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake west build -b thingy53/nrf5340/cpuapp --build-dir build --sysbuild -- -DPython3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dclient_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dmcuboot_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Dempty_net_core_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 -Db0n_Python3_EXECUTABLE=/opt/nordic/ncs/toolchains/322ac893fe/opt/python@3.12/bin/python3.12 2>&1 | tee build/build.log
+	@.github/skills/guitaracc-build/scripts/build.sh client
 	@$(MAKE) validate-client-overlays
+	@echo "$(GREEN)✓ Client build complete$(NC)"
+	@echo "$(GREEN)  Artifacts: client/build/client/zephyr/$(NC)"
 	@echo "$(GREEN)✓ Client build complete$(NC)"
 
 #==============================================================================
 # Rebuild Targets (pristine builds)
 #==============================================================================
 
-rebuild: test check-west rebuild-basestation rebuild-client
+rebuild: test rebuild-basestation rebuild-client
 	@echo ""
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(GREEN)✅ Pristine rebuild complete!$(NC)"
 	@echo "$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo ""
 
-rebuild-basestation: check-west
+rebuild-basestation:
 	@echo ""
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Pristine build: Basestation$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@cd basestation && west build -b nrf5340_audio_dk/nrf5340/cpuapp --build-dir build --pristine
+	@.github/skills/guitaracc-build/scripts/build.sh basestation pristine
 	@echo "$(GREEN)✓ Basestation pristine build complete$(NC)"
+	@echo "$(GREEN)  Artifacts: basestation/build/basestation/zephyr/$(NC)"
 
-rebuild-client: check-west
+rebuild-client:
 	@echo ""
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Pristine build: Client$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@cd client && CMAKE=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake west build -b thingy53/nrf5340/cpuapp --build-dir build --pristine --sysbuild -- -DDEBUG_THREAD_INFO=Off -DPython3_EXECUTABLE=$(WEST_PYTHON) -Dclient_Python3_EXECUTABLE=$(WEST_PYTHON) -Dmcuboot_Python3_EXECUTABLE=$(WEST_PYTHON) -Dempty_net_core_Python3_EXECUTABLE=$(WEST_PYTHON) -Db0n_Python3_EXECUTABLE=$(WEST_PYTHON) -DCMAKE_COMMAND=/opt/nordic/ncs/toolchains/322ac893fe/Cellar/cmake/3.21.0/bin/cmake -Dclient_DEBUG_THREAD_INFO=Off -Dmcuboot_DEBUG_THREAD_INFO=Off -Dipc_radio_DEBUG_THREAD_INFO=Off -Db0n_DEBUG_THREAD_INFO=Off
+	@.github/skills/guitaracc-build/scripts/build.sh client pristine
 	@echo "$(GREEN)✓ Client pristine build complete$(NC)"
+	@echo "$(GREEN)  Artifacts: client/build/client/zephyr/$(NC)"
 
 #==============================================================================
 # Flash Targets
 #==============================================================================
 
-flash: check-west flash-basestation flash-client
+flash: flash-basestation flash-client
 	@echo ""
 	@echo "$(GREEN)✅ All devices flashed!$(NC)"
 	@echo ""
 
-flash-basestation: check-west
+flash-basestation:
 	@echo ""
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Flashing Basestation (nRF5340 Audio DK)$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)⚠ Connect nRF5340 Audio DK and press Enter...$(NC)"
 	@read dummy
-	@cd basestation && west flash --build-dir build
+	@nrfutil toolchain-manager launch --ncs-version $(NCS_VERSION) -- \
+		west flash -d basestation/build
 	@echo "$(GREEN)✓ Basestation flashed$(NC)"
 
-flash-client: check-west
+flash-client:
 	@echo ""
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Flashing Client (Thingy:53)$(NC)"
 	@echo "$(YELLOW)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)⚠ Connect Thingy:53 via USB and press Enter...$(NC)"
 	@read dummy
-	@cd client && west flash --build-dir build
+	@nrfutil toolchain-manager launch --ncs-version $(NCS_VERSION) -- \
+		west flash -d client/build
 	@echo "$(GREEN)✓ Client flashed$(NC)"
 
 #==============================================================================

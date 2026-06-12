@@ -5,12 +5,14 @@
 
 #include "ui_interface.h"
 #include "config_storage.h"
+#include "accel_mapping.h"
 #include "firmware_version.h"
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/data/json.h>
 #include <stdlib.h>
+#include <string.h>
 
 LOG_MODULE_REGISTER(ui_shell, LOG_LEVEL_DBG);
 
@@ -40,6 +42,8 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
 	}
 	
 	shell_print(sh, "\n=== GuitarAcc Basestation Status ===");
+	shell_print(sh, "Firmware Version: %s", FIRMWARE_VERSION_STRING);
+	shell_print(sh, "Build Date: %s %s", FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
 	shell_print(sh, "Connected devices: %d", connected_devices);
 	shell_print(sh, "MIDI output: %s", midi_output_active ? "Active" : "Inactive");
 	
@@ -509,6 +513,285 @@ static int cmd_config_accel_offset(const struct shell *sh, size_t argc, char **a
 	return 0;
 }
 
+static int cmd_pipeline_set(const struct shell *sh, size_t argc, char **argv)
+{
+	/* Usage: pipeline set <rho> <theta> <midi_cc> <func_type> [func_params...] */
+	
+	if (argc < 5) {
+		shell_error(sh, "Usage: pipeline set <rho> <theta> <midi_cc> <func_type> [params...]");
+		shell_error(sh, "  rho: Rotation around X axis (0-360 degrees)");
+		shell_error(sh, "  theta: Rotation around Y axis (0-360 degrees)");
+		shell_error(sh, "  midi_cc: MIDI CC number (0-127)");
+		shell_error(sh, "  func_type: linear | exponential | scurve | lookup");
+		shell_error(sh, "");
+		shell_error(sh, "Parameters by function type:");
+		shell_error(sh, "  linear <scale> <offset>");
+		shell_error(sh, "    scale: 0.1-10.0, offset: -1.0-1.0");
+		shell_error(sh, "  exponential <exponent>");
+		shell_error(sh, "    exponent: 0.1-5.0 (<1.0=log feel, >1.0=exp feel)");
+		shell_error(sh, "  scurve <steepness>");
+		shell_error(sh, "    steepness: 1.0-20.0");
+		shell_error(sh, "  lookup <v0> <v1> <v2> <v3> <v4>");
+		shell_error(sh, "    5 MIDI output values (0-127) at fixed input points");
+		shell_error(sh, "");
+		shell_error(sh, "Examples:");
+		shell_error(sh, "  pipeline set 45 90 1 linear 1.0 0.0");
+		shell_error(sh, "  pipeline set 30 60 7 exponential 2.0");
+		shell_error(sh, "  pipeline set 0 180 11 scurve 10.0");
+		shell_error(sh, "  pipeline set 15 45 74 lookup 0 32 64 96 127");
+		return -1;
+	}
+	
+	/* Parse common parameters */
+	float rho = atof(argv[1]);
+	float theta = atof(argv[2]);
+	int midi_cc = atoi(argv[3]);
+	const char *func_type_str = argv[4];
+	
+	/* Validate common parameters */
+	if (midi_cc < 0 || midi_cc > 127) {
+		shell_error(sh, "Invalid MIDI CC number (0-127)");
+		return -1;
+	}
+	
+	/* Parse function type and parameters */
+	struct accel_rotation_config rot_cfg;
+	accel_rotation_init_defaults(&rot_cfg);
+	rot_cfg.rho_angle = rho;
+	rot_cfg.theta_angle = theta;
+	rot_cfg.midi_cc = (uint8_t)midi_cc;
+	
+	if (strcmp(func_type_str, "linear") == 0) {
+		if (argc != 7) {
+			shell_error(sh, "Linear function requires 2 parameters: <scale> <offset>");
+			return -1;
+		}
+		rot_cfg.func_type = CONV_FUNC_LINEAR;
+		rot_cfg.params.linear.scale = atof(argv[5]);
+		rot_cfg.params.linear.offset = atof(argv[6]);
+		
+	} else if (strcmp(func_type_str, "exponential") == 0) {
+		if (argc != 6) {
+			shell_error(sh, "Exponential function requires 1 parameter: <exponent>");
+			return -1;
+		}
+		rot_cfg.func_type = CONV_FUNC_EXPONENTIAL;
+		rot_cfg.params.exponential.exponent = atof(argv[5]);
+		
+	} else if (strcmp(func_type_str, "scurve") == 0) {
+		if (argc != 6) {
+			shell_error(sh, "S-curve function requires 1 parameter: <steepness>");
+			return -1;
+		}
+		rot_cfg.func_type = CONV_FUNC_SCURVE;
+		rot_cfg.params.scurve.steepness = atof(argv[5]);
+		
+	} else if (strcmp(func_type_str, "lookup") == 0) {
+		if (argc != 10) {
+			shell_error(sh, "Lookup function requires 5 parameters: <v0> <v1> <v2> <v3> <v4>");
+			return -1;
+		}
+		rot_cfg.func_type = CONV_FUNC_LOOKUP;
+		for (int i = 0; i < LOOKUP_TABLE_POINTS; i++) {
+			int val = atoi(argv[5 + i]);
+			if (val < 0 || val > 127) {
+				shell_error(sh, "Invalid lookup value %d (must be 0-127)", val);
+				return -1;
+			}
+			rot_cfg.params.lookup.values[i] = (uint8_t)val;
+		}
+		
+	} else {
+		shell_error(sh, "Invalid function type. Use: linear, exponential, scurve, or lookup");
+		return -1;
+	}
+	
+	/* Validate and sanitize configuration */
+	if (!validate_rotation_config(&rot_cfg)) {
+		shell_warn(sh, "Configuration parameters were adjusted to valid ranges");
+	}
+	
+	/* Load current configuration */
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	/* Get active patch index */
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= 16) patch_idx = 0;
+	
+	/* Save rotation pipeline to patch configuration */
+	cfg.patches[patch_idx].rotation_pipeline = rot_cfg;
+	
+	/* Save to storage */
+	if (config_storage_save(&cfg) != 0) {
+		shell_error(sh, "Error saving configuration");
+		return -1;
+	}
+	
+	/* Display what was configured */
+	shell_print(sh, "Accelerometer rotation pipeline configured (Patch %d):", patch_idx);
+	shell_print(sh, "  Rho angle (X-axis rotation): %.1f degrees", rot_cfg.rho_angle);
+	shell_print(sh, "  Theta angle (Y-axis rotation): %.1f degrees", rot_cfg.theta_angle);
+	shell_print(sh, "  MIDI CC: %d", rot_cfg.midi_cc);
+	
+	const char *func_names[] = {"Linear", "Exponential", "S-Curve", "Lookup Table"};
+	shell_print(sh, "  Conversion function: %s", func_names[rot_cfg.func_type]);
+	
+	switch (rot_cfg.func_type) {
+	case CONV_FUNC_LINEAR:
+		shell_print(sh, "    Scale: %.2f, Offset: %.2f", 
+			rot_cfg.params.linear.scale, rot_cfg.params.linear.offset);
+		break;
+	case CONV_FUNC_EXPONENTIAL:
+		shell_print(sh, "    Exponent: %.2f", rot_cfg.params.exponential.exponent);
+		break;
+	case CONV_FUNC_SCURVE:
+		shell_print(sh, "    Steepness: %.2f", rot_cfg.params.scurve.steepness);
+		break;
+	case CONV_FUNC_LOOKUP:
+		shell_print(sh, "    Values: [%d, %d, %d, %d, %d]",
+			rot_cfg.params.lookup.values[0], rot_cfg.params.lookup.values[1],
+			rot_cfg.params.lookup.values[2], rot_cfg.params.lookup.values[3],
+			rot_cfg.params.lookup.values[4]);
+		break;
+	}
+	
+	shell_print(sh, "Configuration saved successfully. Use 'config save' if needed.");
+	
+	if (ui_config_reload_callback) {
+		ui_config_reload_callback();
+	}
+	
+	return 0;
+}
+
+static int cmd_pipeline_show(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	
+	/* Load current configuration */
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	/* Get active patch index */
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= 16) patch_idx = 0;
+	
+	struct accel_rotation_config *rot_cfg = &cfg.patches[patch_idx].rotation_pipeline;
+	
+	shell_print(sh, "");
+	shell_print(sh, "=== Accelerometer Rotation Pipeline (Patch %d) ===", patch_idx);
+	shell_print(sh, "");
+	shell_print(sh, "Rotation:");
+	shell_print(sh, "  Rho (X-axis):   %.1f degrees", rot_cfg->rho_angle);
+	shell_print(sh, "  Theta (Y-axis): %.1f degrees", rot_cfg->theta_angle);
+	shell_print(sh, "");
+	shell_print(sh, "Output:");
+	shell_print(sh, "  MIDI CC:        %d", rot_cfg->midi_cc);
+	shell_print(sh, "");
+	
+	const char *func_names[] = {"Linear", "Exponential", "S-Curve", "Lookup Table"};
+	shell_print(sh, "Conversion Function: %s", func_names[rot_cfg->func_type]);
+	
+	switch (rot_cfg->func_type) {
+	case CONV_FUNC_LINEAR:
+		shell_print(sh, "  Scale:  %.2f", rot_cfg->params.linear.scale);
+		shell_print(sh, "  Offset: %.2f", rot_cfg->params.linear.offset);
+		break;
+	case CONV_FUNC_EXPONENTIAL:
+		shell_print(sh, "  Exponent: %.2f", rot_cfg->params.exponential.exponent);
+		break;
+	case CONV_FUNC_SCURVE:
+		shell_print(sh, "  Steepness: %.2f", rot_cfg->params.scurve.steepness);
+		break;
+	case CONV_FUNC_LOOKUP:
+		shell_print(sh, "  Input points:  [-1.0, -0.5, 0.0, 0.5, 1.0]");
+		shell_print(sh, "  Output values: [%d, %d, %d, %d, %d]",
+			rot_cfg->params.lookup.values[0], rot_cfg->params.lookup.values[1],
+			rot_cfg->params.lookup.values[2], rot_cfg->params.lookup.values[3],
+			rot_cfg->params.lookup.values[4]);
+		break;
+	}
+	
+	shell_print(sh, "");
+	
+	return 0;
+}
+
+static int cmd_pipeline_json(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	
+	/* Load current configuration */
+	static struct config_data cfg;
+	if (config_storage_load(&cfg) != 0) {
+		shell_error(sh, "Error loading configuration");
+		return -1;
+	}
+	
+	/* Get active patch index */
+	uint8_t patch_idx = cfg.global.default_patch;
+	if (patch_idx >= 16) patch_idx = 0;
+	
+	struct accel_rotation_config *rot_cfg = &cfg.patches[patch_idx].rotation_pipeline;
+	
+	const char *func_names[] = {"linear", "exponential", "scurve", "lookup"};
+	
+	/* Build JSON output */
+	shell_print(sh, "{");
+	shell_print(sh, "  \"patch\": %d,", patch_idx);
+	shell_print(sh, "  \"rotation\": {");
+	shell_print(sh, "    \"rho_degrees\": %.1f,", rot_cfg->rho_angle);
+	shell_print(sh, "    \"theta_degrees\": %.1f", rot_cfg->theta_angle);
+	shell_print(sh, "  },");
+	shell_print(sh, "  \"output\": {");
+	shell_print(sh, "    \"midi_cc\": %d", rot_cfg->midi_cc);
+	shell_print(sh, "  },");
+	shell_print(sh, "  \"conversion\": {");
+	shell_print(sh, "    \"function_type\": \"%s\",", func_names[rot_cfg->func_type]);
+	
+	switch (rot_cfg->func_type) {
+	case CONV_FUNC_LINEAR:
+		shell_print(sh, "    \"parameters\": {");
+		shell_print(sh, "      \"scale\": %.2f,", rot_cfg->params.linear.scale);
+		shell_print(sh, "      \"offset\": %.2f", rot_cfg->params.linear.offset);
+		shell_print(sh, "    }");
+		break;
+	case CONV_FUNC_EXPONENTIAL:
+		shell_print(sh, "    \"parameters\": {");
+		shell_print(sh, "      \"exponent\": %.2f", rot_cfg->params.exponential.exponent);
+		shell_print(sh, "    }");
+		break;
+	case CONV_FUNC_SCURVE:
+		shell_print(sh, "    \"parameters\": {");
+		shell_print(sh, "      \"steepness\": %.2f", rot_cfg->params.scurve.steepness);
+		shell_print(sh, "    }");
+		break;
+	case CONV_FUNC_LOOKUP:
+		shell_print(sh, "    \"parameters\": {");
+		shell_print(sh, "      \"input_points\": [-1.0, -0.5, 0.0, 0.5, 1.0],");
+		shell_print(sh, "      \"output_values\": [%d, %d, %d, %d, %d]",
+			rot_cfg->params.lookup.values[0], rot_cfg->params.lookup.values[1],
+			rot_cfg->params.lookup.values[2], rot_cfg->params.lookup.values[3],
+			rot_cfg->params.lookup.values[4]);
+		shell_print(sh, "    }");
+		break;
+	}
+	
+	shell_print(sh, "  }");
+	shell_print(sh, "}");
+	
+	return 0;
+}
+
 static int cmd_config_velocity_curve(const struct shell *sh, size_t argc, char **argv)
 {
 	if (argc != 2) {
@@ -747,6 +1030,72 @@ static int cmd_midi_send_rt(const struct shell *sh, size_t argc, char **argv)
 	}
 	
 	shell_print(sh, "Sent real-time message: 0x%02X", (uint8_t)rt_byte);
+	return 0;
+}
+
+static int cmd_monitor(const struct shell *sh, size_t argc, char **argv)
+{
+	struct pipeline_snapshot snapshot;
+	int ret;
+	bool json_format = false;
+	
+	/* Check for optional 'json' argument */
+	if (argc >= 2 && strcmp(argv[1], "json") == 0) {
+		json_format = true;
+	}
+	
+	/* Get the latest pipeline snapshot */
+	ret = get_pipeline_snapshot(&snapshot);
+	if (ret == -ENODATA) {
+		shell_error(sh, "No pipeline data available yet");
+		shell_print(sh, "Waiting for accelerometer data from connected client...");
+		return -1;
+	} else if (ret < 0) {
+		shell_error(sh, "Failed to get pipeline snapshot: %d", ret);
+		return ret;
+	}
+	
+	/* Output in requested format */
+	if (json_format) {
+		/* JSON format - single line */
+		const char *func_names[] = {"linear", "exponential", "scurve", "lookup"};
+		shell_print(sh, "{\"timestamp_ms\":%u,"
+		           "\"raw_axis\":{\"x\":%d,\"y\":%d,\"z\":%d},"
+		           "\"input_vector\":{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f},"
+		           "\"rotated_vector\":{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f},"
+		           "\"normalized_vector\":{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f},"
+		           "\"scalar_projection\":%.3f,"
+		           "\"function_type\":\"%s\","
+		           "\"midi_output\":{\"cc\":%d,\"value\":%d}}",
+		           snapshot.timestamp_ms,
+		           snapshot.raw_axis.x, snapshot.raw_axis.y, snapshot.raw_axis.z,
+		           (double)snapshot.input_vector.x, (double)snapshot.input_vector.y, (double)snapshot.input_vector.z,
+		           (double)snapshot.rotated_vector.x, (double)snapshot.rotated_vector.y, (double)snapshot.rotated_vector.z,
+		           (double)snapshot.normalized_vector.x, (double)snapshot.normalized_vector.y, (double)snapshot.normalized_vector.z,
+		           (double)snapshot.scalar_projection,
+		           func_names[snapshot.function_type],
+		           snapshot.midi_output.cc, snapshot.midi_output.value);
+	} else {
+		/* Human-readable format */
+		const char *func_names[] = {"Linear", "Exponential", "S-Curve", "Lookup"};
+		shell_print(sh, "");
+		shell_print(sh, "Pipeline Snapshot [%u ms]", snapshot.timestamp_ms);
+		shell_print(sh, "============================================================");
+		shell_print(sh, "  Raw Axis (milli-g):       X=%5d  Y=%5d  Z=%5d",
+		           snapshot.raw_axis.x, snapshot.raw_axis.y, snapshot.raw_axis.z);
+		shell_print(sh, "  Input Vector (g):         X=%6.3f Y=%6.3f Z=%6.3f",
+		           (double)snapshot.input_vector.x, (double)snapshot.input_vector.y, (double)snapshot.input_vector.z);
+		shell_print(sh, "  Rotated Vector (g):       X=%6.3f Y=%6.3f Z=%6.3f",
+		           (double)snapshot.rotated_vector.x, (double)snapshot.rotated_vector.y, (double)snapshot.rotated_vector.z);
+		shell_print(sh, "  Normalized Unit Vector:   X=%6.3f Y=%6.3f Z=%6.3f",
+		           (double)snapshot.normalized_vector.x, (double)snapshot.normalized_vector.y, (double)snapshot.normalized_vector.z);
+		shell_print(sh, "  Scalar Projection (X):    %6.3f", (double)snapshot.scalar_projection);
+		shell_print(sh, "  Function: %s", func_names[snapshot.function_type]);
+		shell_print(sh, "  MIDI Output:              CC %d = %d",
+		           snapshot.midi_output.cc, snapshot.midi_output.value);
+		shell_print(sh, "");
+	}
+	
 	return 0;
 }
 
@@ -1027,13 +1376,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_config,
 	SHELL_CMD_ARG(select, NULL, "Select active patch <0-15>", cmd_config_select_patch, 2, 0),
 	SHELL_CMD(list, NULL, "List patches", cmd_config_list_patches),
 	SHELL_CMD_ARG(midi_ch, NULL, "Set MIDI channel <1-16>", cmd_config_midi_ch, 2, 0),
-	SHELL_CMD_ARG(cc, NULL, "Set CC mapping <x|y|z> <0-127>", cmd_config_cc, 3, 0),
-	SHELL_CMD_ARG(accel_min, NULL, "Set axis min CC <0-5> <0-127>", cmd_config_accel_min, 3, 0),
-	SHELL_CMD_ARG(accel_max, NULL, "Set axis max CC <0-5> <0-127>", cmd_config_accel_max, 3, 0),
-	SHELL_CMD_ARG(accel_invert, NULL, "Invert axis <0-5> <0|1>", cmd_config_accel_invert, 3, 0),
 	SHELL_CMD_ARG(accel_deadzone, NULL, "Set CC change threshold <0-127>", cmd_config_accel_deadzone, 2, 0),
-	SHELL_CMD_ARG(accel_scale, NULL, "Set axis G-force range <0-2> <100-4000>mg", cmd_config_accel_scale, 3, 0),
-	SHELL_CMD_ARG(accel_offset, NULL, "Set axis center point <0-2> <-2000-2000>mg", cmd_config_accel_offset, 3, 0),
 	SHELL_CMD_ARG(velocity_curve, NULL, "Set velocity curve <0-127>", cmd_config_velocity_curve, 2, 0),
 	SHELL_CMD_ARG(scan_interval, NULL, "Set BLE scan interval <10-1000> ms", cmd_config_scan_interval, 2, 0),
 	SHELL_CMD_ARG(avg_enable, NULL, "Enable running average <0|1>", cmd_config_avg_enable, 2, 0),
@@ -1052,9 +1395,18 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_midi,
 	SHELL_SUBCMD_SET_END
 );
 
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_pipeline,
+	SHELL_CMD_ARG(set, NULL, "Configure pipeline <rho> <theta> <cc> <func> [params...]", cmd_pipeline_set, 5, 5),
+	SHELL_CMD(show, NULL, "Show current pipeline configuration", cmd_pipeline_show),
+	SHELL_CMD(json, NULL, "Show pipeline configuration in JSON format", cmd_pipeline_json),
+	SHELL_SUBCMD_SET_END
+);
+
 SHELL_CMD_REGISTER(config, &sub_config, "Configuration commands", NULL);
 SHELL_CMD_REGISTER(midi, &sub_midi, "MIDI commands", NULL);
+SHELL_CMD_REGISTER(pipeline, &sub_pipeline, "Accelerometer pipeline commands", NULL);
 SHELL_CMD_REGISTER(status, NULL, "Show system status", cmd_status);
+SHELL_CMD_ARG_REGISTER(monitor, NULL, "Show pipeline snapshot [json]", cmd_monitor, 1, 1);
 
 /*
  * Public API

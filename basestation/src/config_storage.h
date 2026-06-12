@@ -8,6 +8,7 @@
 
 #include <zephyr/kernel.h>
 #include <stdint.h>
+#include "accel_mapping.h"
 
 /**
  * @brief Configuration Storage Module
@@ -102,8 +103,11 @@ struct patch_config {
 	/* Patch metadata */
 	char patch_name[32];           /* Patch name (null-terminated) */
 	
+	/* Accelerometer rotation pipeline */
+	struct accel_rotation_config rotation_pipeline; /* 3D rotation and conversion pipeline (15 bytes) */
+	
 	/* Reserved for future patch settings */
-	uint8_t reserved[53];          /* Future expansion (53 bytes for 4-byte alignment) */
+	uint8_t reserved[38];          /* Future expansion (38 bytes: 53 - 15) */
 } __packed;
 
 /**

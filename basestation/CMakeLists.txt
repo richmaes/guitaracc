@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 3.20.0)
 # Update FIRMWARE_VERSION_MINOR for each build/change to track versions
 set(FIRMWARE_VERSION_MAJOR 1)
 set(FIRMWARE_VERSION_MINOR 3)
-set(FIRMWARE_VERSION_PATCH 0)
+set(FIRMWARE_VERSION_PATCH 1)
 set(FIRMWARE_VERSION "${FIRMWARE_VERSION_MAJOR}.${FIRMWARE_VERSION_MINOR}.${FIRMWARE_VERSION_PATCH}")
 
 # Force use of nRF SDK Python - check multiple sources

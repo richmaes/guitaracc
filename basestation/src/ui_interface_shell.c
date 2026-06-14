@@ -526,7 +526,8 @@ static int cmd_pipeline_set(const struct shell *sh, size_t argc, char **argv)
 		shell_error(sh, "");
 		shell_error(sh, "Parameters by function type:");
 		shell_error(sh, "  linear <scale> <offset>");
-		shell_error(sh, "    scale: 0.1-10.0, offset: -1.0-1.0");
+		shell_error(sh, "    scale: -10.0 to -0.1 or 0.1 to 10.0 (negative reverses)");
+		shell_error(sh, "    offset: -1.0 to 1.0");
 		shell_error(sh, "  exponential <exponent>");
 		shell_error(sh, "    exponent: 0.1-5.0 (<1.0=log feel, >1.0=exp feel)");
 		shell_error(sh, "  scurve <steepness>");
@@ -536,6 +537,7 @@ static int cmd_pipeline_set(const struct shell *sh, size_t argc, char **argv)
 		shell_error(sh, "");
 		shell_error(sh, "Examples:");
 		shell_error(sh, "  pipeline set 45 90 1 linear 1.0 0.0");
+		shell_error(sh, "  pipeline set 45 90 1 linear -1.0 0.0  # Reversed output");
 		shell_error(sh, "  pipeline set 30 60 7 exponential 2.0");
 		shell_error(sh, "  pipeline set 0 180 11 scurve 10.0");
 		shell_error(sh, "  pipeline set 15 45 74 lookup 0 32 64 96 127");

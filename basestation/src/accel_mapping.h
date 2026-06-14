@@ -37,7 +37,7 @@ enum conversion_func_type {
 union conversion_params {
 	/* Linear: scale and offset */
 	struct {
-		float scale;   /* 0.1 to 10.0 */
+		float scale;   /* -10.0 to -0.1 or 0.1 to 10.0 (negative reverses direction) */
 		float offset;  /* -1.0 to 1.0 */
 	} linear;
 	

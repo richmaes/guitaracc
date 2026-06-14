@@ -214,8 +214,16 @@ bool validate_rotation_config(struct accel_rotation_config *config)
 	/* Validate function parameters */
 	switch (config->func_type) {
 	case CONV_FUNC_LINEAR:
-		if (config->params.linear.scale < 0.1f || config->params.linear.scale > 10.0f) {
-			config->params.linear.scale = clampf(config->params.linear.scale, 0.1f, 10.0f);
+		/* Scale: -10.0 to -0.1 or 0.1 to 10.0 (exclude near-zero values) */
+		if (config->params.linear.scale >= -0.1f && config->params.linear.scale <= 0.1f) {
+			/* Too close to zero, snap to minimum magnitude */
+			config->params.linear.scale = (config->params.linear.scale >= 0.0f) ? 0.1f : -0.1f;
+			valid = false;
+		} else if (config->params.linear.scale < -10.0f) {
+			config->params.linear.scale = -10.0f;
+			valid = false;
+		} else if (config->params.linear.scale > 10.0f) {
+			config->params.linear.scale = 10.0f;
 			valid = false;
 		}
 		if (config->params.linear.offset < -1.0f || config->params.linear.offset > 1.0f) {

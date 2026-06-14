@@ -99,7 +99,8 @@ Projects the 3D unit vector onto the X axis after rotation, extracting the x-com
 Applies a configurable mathematical or predefined function to map the normalized scalar value to MIDI control range. Available function types:
 
 - **Linear**: `MIDI = clamp((scalar * scale + offset) * 127, 0, 127)`
-  - Parameters: `scale` (0.1 - 10.0), `offset` (-1.0 - 1.0)
+  - Parameters: `scale` (-10.0 to -0.1 or 0.1 to 10.0), `offset` (-1.0 - 1.0)
+  - Negative scale reverses output direction (127→0 instead of 0→127)
   - Storage: 2 floats (8 bytes)
 
 - **Exponential**: `MIDI = clamp(((scalar + 1)/2)^exponent * 127, 0, 127)`
@@ -192,14 +193,15 @@ accel_pipeline <rho> <theta> <midi_cc> <func_type> [func_params...]
 **Example Usage:**
 ```
 accel_pipeline 45 90 1 linear 1.0 0.5          # Rho=45°, Theta=90°, CC=1, Linear: scale=1.0, offset=0.5
+accel_pipeline 45 90 1 linear -1.0 0.0         # Same rotation, reversed output (127→0 instead of 0→127)
 accel_pipeline 30 60 7 exponential 2.0         # Rho=30°, Theta=60°, CC=7, Exponential: exponent=2.0
 accel_pipeline 0 180 11 scurve 10.0            # Rho=0°, Theta=180°, CC=11, S-curve: steepness=10.0
 accel_pipeline 15 45 74 lookup 0 20 64 108 127 # Rho=15°, Theta=45°, CC=74, Lookup: 5 output values
 ```
 
 **Parameter Details by Function Type:**
-- **linear**: `<scale> <offset>` (2 parameters)
-- **exponential**: `<exponent>` (1 parameter)
+- **linear**: `<scale> <offset>` (2 parameters)  - scale: -10.0 to -0.1 or 0.1 to 10.0 (negative reverses direction)
+  - offset: -1.0 to 1.0- **exponential**: `<exponent>` (1 parameter)
 - **scurve**: `<steepness>` (1 parameter)
 - **lookup**: `<out0> <out1> <out2> <out3> <out4>` (5 parameters, MIDI values 0-127)
 

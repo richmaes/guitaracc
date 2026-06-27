@@ -6,6 +6,12 @@ A BLE-based guitar accessory system built with Nordic nRF Connect SDK.
 
 ```
 guitaracc/
+├── GuitarAcc/           # OSX GUI application 
+│   │   └── GuitarAcc.xcodeproj
+│   ├── GuitarAcc/
+│   │   └── GUI_ARCHITECTURE.md
+│   ├── GuitarAccTests/
+│   ├── GuitarAccUITests/
 ├── basestation/         # Basestation application (nRF5340 Audio DK)
 │   ├── src/
 │   │   └── main.c

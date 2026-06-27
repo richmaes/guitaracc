@@ -29,20 +29,21 @@ Commands are organized hierarchically using the Zephyr Shell:
 
 #### Status Commands
 - `status` - Display system status (connected devices, MIDI output state, config area)
+- `monitor [json]` - Show real-time pipeline snapshot
+  - Without arguments: human-readable format showing raw accelerometer data, rotated vectors, and MIDI output
+  - With `json`: single-line JSON format for logging/scripting
+    - Example: `{"timestamp_ms":12345,"raw_axis":{"x":100,"y":200,"z":300},"input_vector":{"x":0.100,"y":0.200,"z":0.300},"rotated_vector":{"x":0.150,"y":0.250,"z":0.350},"normalized_vector":{"x":0.316,"y":0.527,"z":0.738},"scalar_projection":0.316,"function_type":"linear","midi_output":{"cc":1,"value":64}}`
 
 #### Configuration Commands (`config` submenu)
 - `config show` - Display all current configuration values
 - `config save` - Save current configuration to flash
 - `config restore` - Restore factory default configuration
+- `config reload` - Reload configuration from storage
 - `config patch <0-15>` - Show specific patch configuration
 - `config select <0-15>` - Select active patch
 - `config list` - List all patches
 - `config midi_ch <1-16>` - Set MIDI output channel
-- `config cc <x|y|z> <0-127>` - Set CC number for each accelerometer axis
-- `config accel_min <0-5> <0-127>` - Set minimum CC value for axis
-- `config accel_max <0-5> <0-127>` - Set maximum CC value for axis
-- `config accel_invert <0-5> <0|1>` - Enable/disable axis inversion
-- `config velocity_curve <0-127>` - Set velocity curve for active patch
+- `config accel_deadzone <0-127>` - Set CC change threshold
 - `config scan_interval <10-1000>` - Set BLE scan interval in ms
 - `config avg_enable <0|1>` - Enable/disable running average filter
 - `config avg_depth <3-10>` - Set running average depth
@@ -66,6 +67,66 @@ Commands are organized hierarchically using the Zephyr Shell:
 - `midi rx_reset` - Reset MIDI receive statistics counters
 - `midi program [0-127]` - Get or set current MIDI program number
 - `midi send_rt <0xF8-0xFF>` - Send real-time MIDI message (Clock, Start, Stop, etc.)
+
+#### Topology Commands (`topo` submenu)
+- `topo show` - Show topology configuration
+- `topo config <instance> <type> <accel> [func] [midi_cc]` - Configure topology instance
+  - `instance`: Topology instance (0-5)
+  - `type`: 1=T1 (1 accel), 2=T2 (2 accel), 3=T3 (1 accel), 4=T4 (2 accel)
+  - `accel`: Axis index 0-5 (X,Y,Z,Roll,Pitch,Yaw), for T2/T4 use comma-separated like '0,1'
+  - `func`: Function unit index 0-7 (optional)
+  - `midi_cc`: MIDI CC number 0-127 (optional)
+- `topo mixer <0-4>` - Set mixer type for combining inputs
+  - 0=PASSTHROUGH, 1=SUM, 2=AVERAGE, 3=MAX, 4=MIN
+
+#### Function Unit Commands (`func` submenu)
+- `func show [idx]` - Show function unit configuration (all or specific index)
+- `func linear <idx> <in_min> <in_max> <out_min> <out_max>` - Configure LINEAR function
+  - Maps input range [in_min, in_max] to output range [out_min, out_max]
+
+#### Virtual Port Debug Commands (`vport` submenu)
+- `vport show <instance> [vport_offset]` - Show virtual port value for debugging
+  - `instance`: Topology instance (0-5)
+  - `vport_offset`: Virtual port offset within instance (0-2, optional)
+
+#### Accelerometer Pipeline Commands (`pipeline` submenu)
+- `pipeline set <rho> <theta> <midi_cc> <func_type> [params...]` - Configure rotation pipeline
+  - `rho`: Rotation around X axis (0-360 degrees)
+  - `theta`: Rotation around Y axis (0-360 degrees)
+  - `midi_cc`: MIDI CC number (0-127)
+  - `func_type`: Conversion function type
+    - `linear <scale> <offset>` - Linear mapping (scale: -10.0 to 10.0, offset: -1.0 to 1.0)
+    - `exponential <exponent>` - Exponential curve (exponent: 0.1-5.0, <1.0=log feel, >1.0=exp feel)
+    - `scurve <steepness>` - S-curve response (steepness: 1.0-20.0)
+    - `lookup <v0> <v1> <v2> <v3> <v4>` - Lookup table with 5 MIDI values (0-127)
+  - Examples:
+    - `pipeline set 45 90 1 linear 1.0 0.0` - Basic linear mapping
+    - `pipeline set 45 90 1 linear -1.0 0.0` - Reversed output
+    - `pipeline set 30 60 7 exponential 2.0` - Exponential response
+    - `pipeline set 0 180 11 scurve 10.0` - S-curve response
+    - `pipeline set 15 45 74 lookup 0 32 64 96 127` - Custom lookup table
+- `pipeline show` - Display current pipeline configuration (human-readable)
+- `pipeline json` - Display pipeline configuration in JSON format
+  - Example output:
+    ```json
+    {
+      "patch": 0,
+      "rotation": {
+        "rho_degrees": 45.0,
+        "theta_degrees": 90.0
+      },
+      "output": {
+        "midi_cc": 1
+      },
+      "conversion": {
+        "function_type": "linear",
+        "parameters": {
+          "scale": 1.00,
+          "offset": 0.00
+        }
+      }
+    }
+    ```
 
 ### Shell Features
 - **Tab Completion**: Press Tab to autocomplete commands and show available options
@@ -200,19 +261,29 @@ MIDI output: Active
 uart:~$ config show
 
 === Configuration ===
+
+--- GLOBAL SETTINGS ---
+Active patch: 0
 MIDI:
   Channel: 1
-  Velocity curve: 0
-  CC mapping: [16, 17, 18, 19, 20, 21]
 BLE:
   Max guitars: 4
   Scan interval: 100 ms
 LED:
   Brightness: 128
+Accelerometer:
+  Scale (mg): X=±1000, Y=±1000, Z=±1000 (full scale G-force → MIDI 0-127)
+  Offset (mg): X=0, Y=0, Z=0 (center point → MIDI 64)
+  Ranges: X=[-1000:1000], Y=[-1000:1000], Z=[-1000:1000] mg → MIDI[0:127]
+Filters:
+  Running average: Enabled
+  Average depth: 5 samples
+
+--- PATCH SETTINGS (Patch 0) ---
+LED:
   Mode: 0
 Accelerometer:
-  Deadzone: 100
-  Scale: [1000, 1000, 1000, 1000, 1000, 1000]
+  Deadzone: 1
 
 uart:~$ midi rx_stats
 
@@ -232,10 +303,8 @@ uart:~$ midi program 5
 MIDI Program set to 5
 
 uart:~$ config midi_ch 2
-MIDI channel set to 2
+MIDI channel set to 2 (global setting)
 
-uart:~$ config cc x 74
-X-axis CC set to 74
 uart:~$ config save
 Configuration saved to flash
 
@@ -302,19 +371,7 @@ GuitarAcc> config show
 **Set MIDI Channel:**
 ```
 GuitarAcc> config midi_ch 5
-MIDI channel set to 5
-```
-
-**Set CC Number for Axis:**
-```
-GuitarAcc> config cc x 74    # Set X-axis to CC 74 (Brightness)
-X-axis CC set to 74
-
-GuitarAcc> config cc y 1     # Set Y-axis to CC 1 (Modulation)
-Y-axis CC set to 1
-
-GuitarAcc> config cc z 11    # Set Z-axis to CC 11 (Expression)
-Z-axis CC set to 11
+MIDI channel set to 5 (global setting)
 ```
 
 **Save Configuration:**
@@ -385,6 +442,7 @@ The export format uses JSON with a hierarchical structure:
       "ble_scan_interval_ms": 100,
       "led_brightness": 128,
       "accel_scale": [1000, 1000, 1000, 1000, 1000, 1000],
+      "accel_offset": [0, 0, 0, 0, 0, 0],
       "running_average_enable": true,
       "running_average_depth": 5
     },
@@ -405,6 +463,32 @@ The export format uses JSON with a hierarchical structure:
   }
 }
 ```
+
+**Field Descriptions:**
+
+- **Global Configuration:**
+  - `default_patch`: Currently active patch (0-15)
+  - `midi_channel`: MIDI output channel (0-15, maps to MIDI channels 1-16)
+  - `max_guitars`: Maximum number of BLE clients (1-4)
+  - `ble_scan_interval_ms`: BLE scan interval in milliseconds (10-1000)
+  - `led_brightness`: LED brightness level (0-255)
+  - `accel_scale`: Full-scale G-force in milli-g for each axis [X,Y,Z,Roll,Pitch,Yaw] that maps to MIDI 0-127
+  - `accel_offset`: Center point offset in milli-g for each axis that maps to MIDI 64
+  - `running_average_enable`: Enable/disable running average filter (true/false)
+  - `running_average_depth`: Running average sample depth (3-10)
+
+- **Patch Configuration:**
+  - `patch_num`: Patch number (0-15)
+  - `patch_name`: User-defined patch name (up to 31 characters)
+  - `velocity_curve`: Velocity curve type (0-127, legacy field)
+  - `cc_mapping`: MIDI CC numbers for 6 axes [X,Y,Z,Roll,Pitch,Yaw] (0-127)
+  - `led_mode`: LED mode (0-3)
+  - `accel_deadzone`: CC change threshold to prevent jitter (0-127)
+  - `accel_min`: Minimum CC output values for each axis (0-127, legacy field)
+  - `accel_max`: Maximum CC output values for each axis (0-127, legacy field)
+  - `accel_invert`: Bitfield for axis inversion (legacy field)
+
+**Note:** The `rotation_pipeline` configuration (used by the accelerometer pipeline feature) is stored per-patch but is accessed via the separate `pipeline` commands, not through `config export`.
 
 ### Export Commands
 
